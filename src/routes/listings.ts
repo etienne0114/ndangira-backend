@@ -35,7 +35,13 @@ const searchSchema = z.object({
   lat: z.coerce.number().optional(),
   lng: z.coerce.number().optional(),
   maxDistanceKm: z.coerce.number().positive().optional(),
-  sort: z.enum(["distance", "price-asc", "price-desc", "fresh"]).default("distance")
+  minPrice: z.coerce.number().positive().optional(),
+  maxPrice: z.coerce.number().positive().optional(),
+  inventoryStatus: z.nativeEnum(InventoryStatus).optional(),
+  verifiedOnly: z.coerce.boolean().optional(),
+  sort: z.enum(["distance", "price-asc", "price-desc", "fresh", "newest"]).default("distance"),
+  limit: z.coerce.number().int().positive().max(100).default(20),
+  offset: z.coerce.number().int().nonnegative().default(0)
 });
 
 type ListingWithMerchant = Prisma.ListingGetPayload<{
@@ -85,42 +91,64 @@ listingsRouter.get("/", async (request, response, next) => {
   try {
     const query = searchSchema.parse(request.query);
 
-    const listings = await prisma.listing.findMany({
-      where: {
-        ...(query.q
-          ? {
-              OR: [
-                { title: { contains: query.q, mode: "insensitive" } },
-                { description: { contains: query.q, mode: "insensitive" } },
-                { tags: { has: query.q.toLowerCase() } }
-              ]
+    // Build where clause with all filters
+    const where: Prisma.ListingWhereInput = {
+      ...(query.q
+        ? {
+            OR: [
+              { title: { contains: query.q, mode: "insensitive" } },
+              { description: { contains: query.q, mode: "insensitive" } },
+              { tags: { has: query.q.toLowerCase() } }
+            ]
+          }
+        : {}),
+      ...(query.category ? { category: query.category } : {}),
+      ...(query.inventoryStatus ? { inventoryStatus: query.inventoryStatus } : {}),
+      ...(query.minPrice || query.maxPrice
+        ? {
+            priceRwf: {
+              ...(query.minPrice ? { gte: query.minPrice } : {}),
+              ...(query.maxPrice ? { lte: query.maxPrice } : {})
             }
-          : {}),
-        ...(query.category ? { category: query.category } : {}),
-        ...(query.neighborhood
-          ? {
-              merchant: {
-                neighborhood: { contains: query.neighborhood, mode: "insensitive" }
-              }
+          }
+        : {}),
+      ...(query.neighborhood
+        ? {
+            merchant: {
+              neighborhood: { contains: query.neighborhood, mode: "insensitive" },
+              ...(query.verifiedOnly ? { verified: true } : {})
             }
+          }
+        : query.verifiedOnly
+          ? { merchant: { verified: true } }
           : {})
-      },
+    };
+
+    // Get total count for pagination
+    const total = await prisma.listing.count({ where });
+
+    // Fetch listings
+    const listings = await prisma.listing.findMany({
+      where,
       include: {
         merchant: true
       },
-      orderBy: [{ isFeatured: "desc" }, { createdAt: "desc" }]
+      orderBy: [{ isFeatured: "desc" }, { createdAt: "desc" }],
+      take: query.limit,
+      skip: query.offset
     });
 
     let serialized = serializeListings(listings, query.lat, query.lng);
 
+    // Apply distance filter if specified
     const maxDistanceKm = query.maxDistanceKm;
-
     if (maxDistanceKm !== undefined) {
       serialized = serialized.filter(
         (listing) => listing.distanceKm !== null && listing.distanceKm <= maxDistanceKm
       );
     }
 
+    // Apply sorting
     serialized.sort((a, b) => {
       switch (query.sort) {
         case "price-asc":
@@ -129,6 +157,8 @@ listingsRouter.get("/", async (request, response, next) => {
           return b.priceRwf - a.priceRwf;
         case "fresh":
           return Number(Boolean(b.freshnessNote)) - Number(Boolean(a.freshnessNote));
+        case "newest":
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
         case "distance":
         default:
           return (a.distanceKm ?? Number.MAX_SAFE_INTEGER) - (b.distanceKm ?? Number.MAX_SAFE_INTEGER);
@@ -136,8 +166,11 @@ listingsRouter.get("/", async (request, response, next) => {
     });
 
     response.json({
-      count: serialized.length,
-      items: serialized
+      items: serialized,
+      total,
+      limit: query.limit,
+      offset: query.offset,
+      hasMore: query.offset + query.limit < total
     });
   } catch (error) {
     next(error);
