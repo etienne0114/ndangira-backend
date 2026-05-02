@@ -9,10 +9,13 @@ datasource db {
 
 enum ListingCategory {
   GROCERIES
+  SUPERMARKET
+  PHARMACY
   RESTAURANTS
   FASHION
   ELECTRONICS
   HOME
+  HOUSING
   HEALTH
   SERVICES
 }
@@ -24,19 +27,28 @@ enum InventoryStatus {
 }
 
 model Merchant {
-  id          String    @id @default(cuid())
-  businessName String
-  ownerName   String
-  phone       String
-  whatsapp    String?
-  neighborhood String
-  district    String
-  latitude    Float
-  longitude   Float
-  verified    Boolean   @default(false)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  listings    Listing[]
+  id              String    @id @default(cuid())
+  businessName    String
+  ownerName       String
+  email           String    @unique
+  passwordHash    String
+  phone           String
+  whatsapp        String?
+  businessType    ListingCategory
+  neighborhood    String
+  district        String
+  addressLine     String?
+  description     String?
+  latitude        Float
+  longitude       Float
+  serviceRadiusKm Int       @default(5)
+  verified        Boolean   @default(false)
+  aiEnabled       Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  listings        Listing[]
+
+  @@index([businessType, neighborhood])
 }
 
 model Listing {
