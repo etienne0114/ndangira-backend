@@ -2,8 +2,10 @@ import cors from "cors";
 import express from "express";
 import { env } from "./config/env.js";
 import { aiRouter } from "./routes/ai.js";
+import { authRouter } from "./routes/auth.js";
 import { healthRouter } from "./routes/health.js";
 import { listingsRouter } from "./routes/listings.js";
+import { merchantRouter } from "./routes/merchant.js";
 import { statsRouter } from "./routes/stats.js";
 
 export const app = express();
@@ -30,8 +32,10 @@ app.get("/", (_request, response) => {
 });
 
 app.use("/health", healthRouter);
+app.use("/api/auth", authRouter);
 app.use("/api/listings", listingsRouter);
 app.use("/api/ai", aiRouter);
+app.use("/api/merchant", merchantRouter);
 app.use("/api/stats", statsRouter);
 
 // Enhanced error handling middleware
