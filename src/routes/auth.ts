@@ -5,6 +5,7 @@ import { z } from "zod";
 import { env } from "../config/env.js";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth } from "../middleware/auth.js";
+import { notifyNewSellerApplication } from "../utils/notifications.js";
 
 export const authRouter = Router();
 
@@ -48,6 +49,11 @@ authRouter.post("/register", async (req, res, next) => {
         sellerStatus: body.role === "SELLER" ? "PENDING" : null
       }
     });
+
+    // Notify admins if this is a seller registration
+    if (body.role === "SELLER") {
+      await notifyNewSellerApplication(user.id);
+    }
 
     res.status(201).json({
       token: signToken(user),

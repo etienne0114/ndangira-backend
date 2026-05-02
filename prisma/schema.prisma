@@ -26,15 +26,16 @@ enum SellerStatus {
 }
 
 model User {
-  id           String        @id @default(cuid())
-  email        String        @unique
-  passwordHash String
-  name         String
-  role         UserRole      @default(CUSTOMER)
-  sellerStatus SellerStatus?
-  merchant     Merchant?
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  id            String         @id @default(cuid())
+  email         String         @unique
+  passwordHash  String
+  name          String
+  role          UserRole       @default(CUSTOMER)
+  sellerStatus  SellerStatus?
+  merchant      Merchant?
+  notifications Notification[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
 }
 
 model Category {
@@ -90,4 +91,28 @@ model Listing {
 
   @@index([categoryId, isFeatured])
   @@index([title])
+}
+
+enum NotificationType {
+  SELLER_APPROVED
+  SELLER_REJECTED
+  LISTING_CREATED
+  LISTING_LOW_STOCK
+  NEW_SELLER_APPLICATION
+  SYSTEM_ANNOUNCEMENT
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  title     String
+  message   String
+  read      Boolean          @default(false)
+  metadata  Json?
+  createdAt DateTime         @default(now())
+
+  @@index([userId, read])
+  @@index([createdAt])
 }

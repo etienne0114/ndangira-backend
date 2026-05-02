@@ -7,6 +7,7 @@ import { authRouter } from "./routes/auth.js";
 import { categoriesRouter } from "./routes/categories.js";
 import { healthRouter } from "./routes/health.js";
 import { listingsRouter } from "./routes/listings.js";
+import { notificationsRouter } from "./routes/notifications.js";
 import { sellerRouter } from "./routes/seller.js";
 import { statsRouter } from "./routes/stats.js";
 
@@ -32,7 +33,8 @@ app.get("/", (_request, response) => {
       ai: "/api/ai/assistant",
       stats: "/api/stats",
       admin: "/api/admin",
-      seller: "/api/seller"
+      seller: "/api/seller",
+      notifications: "/api/notifications"
     }
   });
 });
@@ -45,6 +47,7 @@ app.use("/api/ai", aiRouter);
 app.use("/api/stats", statsRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/seller", sellerRouter);
+app.use("/api/notifications", notificationsRouter);
 
 app.use((error: unknown, _request: express.Request, response: express.Response, _next: express.NextFunction) => {
   console.error("Error:", error);

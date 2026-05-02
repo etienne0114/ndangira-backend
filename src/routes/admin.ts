@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { prisma } from "../lib/prisma.js";
+import { notifySellerApproval } from "../utils/notifications.js";
 
 export const adminRouter = Router();
 
@@ -40,6 +41,10 @@ adminRouter.patch("/sellers/:id/approve", async (req, res, next) => {
       res.status(404).json({ message: "Seller not found." });
       return;
     }
+    
+    // Send notification to seller
+    await notifySellerApproval(req.params.id, true);
+    
     res.json({ id: req.params.id, sellerStatus: "APPROVED" });
   } catch (err) {
     next(err);
@@ -57,6 +62,10 @@ adminRouter.patch("/sellers/:id/reject", async (req, res, next) => {
       res.status(404).json({ message: "Seller not found." });
       return;
     }
+    
+    // Send notification to seller
+    await notifySellerApproval(req.params.id, false);
+    
     res.json({ id: req.params.id, sellerStatus: "REJECTED" });
   } catch (err) {
     next(err);

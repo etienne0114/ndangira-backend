@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { prisma } from "../lib/prisma.js";
+import { notifyListingCreated, notifyLowStock } from "../utils/notifications.js";
 
 export const sellerRouter = Router();
 
@@ -73,6 +74,15 @@ sellerRouter.post("/listings", requireApproved, async (req, res, next) => {
       },
       include: { category: true, merchant: true }
     });
+    
+    // Send notification to seller
+    await notifyListingCreated(listing.id, merchant.id);
+    
+    // Send low stock notification if applicable
+    if (listing.inventoryStatus === "LOW_STOCK") {
+      await notifyLowStock(listing.id);
+    }
+    
     res.status(201).json(listing);
   } catch (err) {
     next(err);
@@ -102,6 +112,12 @@ sellerRouter.patch("/listings/:id", requireApproved, async (req, res, next) => {
       data: categoryId ? { ...listingData, category: { connect: { id: categoryId } } } : listingData,
       include: { category: true, merchant: true }
     });
+    
+    // Send low stock notification if status changed to LOW_STOCK
+    if (body.inventoryStatus === "LOW_STOCK" && listing.inventoryStatus !== "LOW_STOCK") {
+      await notifyLowStock(listingId);
+    }
+    
     res.json(updated);
   } catch (err) {
     next(err);
