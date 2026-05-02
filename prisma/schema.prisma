@@ -7,34 +7,54 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum ListingCategory {
-  GROCERIES
-  SUPERMARKET
-  PHARMACY
-  RESTAURANTS
-  FASHION
-  ELECTRONICS
-  HOME
-  HOUSING
-  HEALTH
-  SERVICES
-}
-
 enum InventoryStatus {
   IN_STOCK
   LOW_STOCK
   MADE_TO_ORDER
 }
 
+enum UserRole {
+  ADMIN
+  SELLER
+  CUSTOMER
+}
+
+enum SellerStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model User {
+  id            String         @id @default(cuid())
+  email         String         @unique
+  passwordHash  String
+  name          String
+  role          UserRole       @default(CUSTOMER)
+  sellerStatus  SellerStatus?
+  merchant      Merchant?
+  notifications Notification[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
+
+model Category {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  label     String
+  isSystem  Boolean   @default(false)
+  createdAt DateTime  @default(now())
+  listings  Listing[]
+}
+
 model Merchant {
   id              String    @id @default(cuid())
+  userId          String?   @unique
+  user            User?     @relation(fields: [userId], references: [id])
   businessName    String
   ownerName       String
-  email           String    @unique
-  passwordHash    String
   phone           String
   whatsapp        String?
-  businessType    ListingCategory
   neighborhood    String
   district        String
   addressLine     String?
@@ -48,26 +68,51 @@ model Merchant {
   updatedAt       DateTime  @updatedAt
   listings        Listing[]
 
-  @@index([businessType, neighborhood])
+  @@index([neighborhood])
 }
 
 model Listing {
-  id                 String          @id @default(cuid())
-  title              String
-  description        String
-  category           ListingCategory
-  priceRwf           Int
-  unitLabel          String
-  inventoryStatus    InventoryStatus @default(IN_STOCK)
-  isFeatured         Boolean         @default(false)
-  freshnessNote      String?
-  imageUrl           String?
-  tags               String[]
-  merchantId         String
-  merchant           Merchant        @relation(fields: [merchantId], references: [id], onDelete: Cascade)
-  createdAt          DateTime        @default(now())
-  updatedAt          DateTime        @updatedAt
+  id              String          @id @default(cuid())
+  title           String
+  description     String
+  categoryId      String
+  category        Category        @relation(fields: [categoryId], references: [id])
+  priceRwf        Int
+  unitLabel       String
+  inventoryStatus InventoryStatus @default(IN_STOCK)
+  isFeatured      Boolean         @default(false)
+  freshnessNote   String?
+  imageUrl        String?
+  tags            String[]
+  merchantId      String
+  merchant        Merchant        @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
 
-  @@index([category, isFeatured])
+  @@index([categoryId, isFeatured])
   @@index([title])
+}
+
+enum NotificationType {
+  SELLER_APPROVED
+  SELLER_REJECTED
+  LISTING_CREATED
+  LISTING_LOW_STOCK
+  NEW_SELLER_APPLICATION
+  SYSTEM_ANNOUNCEMENT
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  title     String
+  message   String
+  read      Boolean          @default(false)
+  metadata  Json?
+  createdAt DateTime         @default(now())
+
+  @@index([userId, read])
+  @@index([createdAt])
 }

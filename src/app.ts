@@ -1,11 +1,14 @@
 import cors from "cors";
 import express from "express";
 import { env } from "./config/env.js";
+import { adminRouter } from "./routes/admin.js";
 import { aiRouter } from "./routes/ai.js";
 import { authRouter } from "./routes/auth.js";
+import { categoriesRouter } from "./routes/categories.js";
 import { healthRouter } from "./routes/health.js";
 import { listingsRouter } from "./routes/listings.js";
-import { merchantRouter } from "./routes/merchant.js";
+import { notificationsRouter } from "./routes/notifications.js";
+import { sellerRouter } from "./routes/seller.js";
 import { statsRouter } from "./routes/stats.js";
 
 export const app = express();
@@ -24,44 +27,48 @@ app.get("/", (_request, response) => {
     version: "1.0.0",
     endpoints: {
       health: "/health",
+      auth: "/api/auth",
+      categories: "/api/categories",
       listings: "/api/listings",
       ai: "/api/ai/assistant",
-      stats: "/api/stats"
+      stats: "/api/stats",
+      admin: "/api/admin",
+      seller: "/api/seller",
+      notifications: "/api/notifications"
     }
   });
 });
 
 app.use("/health", healthRouter);
 app.use("/api/auth", authRouter);
+app.use("/api/categories", categoriesRouter);
 app.use("/api/listings", listingsRouter);
 app.use("/api/ai", aiRouter);
-app.use("/api/merchant", merchantRouter);
 app.use("/api/stats", statsRouter);
+app.use("/api/admin", adminRouter);
+app.use("/api/seller", sellerRouter);
+app.use("/api/notifications", notificationsRouter);
 
-// Enhanced error handling middleware
 app.use((error: unknown, _request: express.Request, response: express.Response, _next: express.NextFunction) => {
   console.error("Error:", error);
-  
-  // Zod validation errors
+
   if (error && typeof error === "object" && "issues" in error) {
-    response.status(400).json({ 
+    response.status(400).json({
       message: "Validation error",
-      errors: error.issues 
+      errors: error.issues
     });
     return;
   }
-  
-  // Standard errors
+
   if (error instanceof Error) {
-    response.status(400).json({ 
+    response.status(400).json({
       message: error.message,
       type: error.name
     });
     return;
   }
-  
-  // Unknown errors
-  response.status(500).json({ 
-    message: "Unexpected server error. Please try again later." 
+
+  response.status(500).json({
+    message: "Unexpected server error. Please try again later."
   });
 });

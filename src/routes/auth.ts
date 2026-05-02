@@ -1,143 +1,99 @@
-import { ListingCategory } from "@prisma/client";
+import bcrypt from "bcryptjs";
 import { Router } from "express";
+import jwt from "jsonwebtoken";
 import { z } from "zod";
-import { hashPassword, signMerchantToken, verifyPassword } from "../lib/auth.js";
+import { env } from "../config/env.js";
 import { prisma } from "../lib/prisma.js";
-import { requireMerchantAuth } from "../middleware/auth.js";
+import { requireAuth } from "../middleware/auth.js";
+import { notifyNewSellerApplication } from "../utils/notifications.js";
+
+export const authRouter = Router();
 
 const registerSchema = z.object({
-  businessName: z.string().min(2),
-  ownerName: z.string().min(2),
   email: z.string().email(),
   password: z.string().min(6),
-  phone: z.string().min(8),
-  whatsapp: z.string().optional(),
-  businessType: z.nativeEnum(ListingCategory),
-  neighborhood: z.string().min(2),
-  district: z.string().min(2),
-  addressLine: z.string().optional(),
-  description: z.string().optional(),
-  latitude: z.number(),
-  longitude: z.number(),
-  serviceRadiusKm: z.number().int().positive().max(50).default(5)
+  name: z.string().min(2),
+  role: z.enum(["SELLER", "CUSTOMER"]).default("CUSTOMER")
 });
 
 const loginSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(6)
+  password: z.string().min(1)
 });
 
-function serializeMerchant(merchant: {
-  id: string;
-  businessName: string;
-  ownerName: string;
-  email: string;
-  phone: string;
-  whatsapp: string | null;
-  businessType: ListingCategory;
-  neighborhood: string;
-  district: string;
-  addressLine: string | null;
-  description: string | null;
-  latitude: number;
-  longitude: number;
-  serviceRadiusKm: number;
-  verified: boolean;
-  aiEnabled: boolean;
-}) {
-  return merchant;
+function signToken(user: { id: string; email: string; name: string; role: string }): string {
+  return jwt.sign(
+    { id: user.id, email: user.email, name: user.name, role: user.role },
+    env.JWT_SECRET,
+    { expiresIn: "7d" }
+  );
 }
 
-export const authRouter = Router();
-
-authRouter.post("/register", async (request, response, next) => {
+authRouter.post("/register", async (req, res, next) => {
   try {
-    const payload = registerSchema.parse(request.body);
+    const body = registerSchema.parse(req.body);
 
-    const existing = await prisma.merchant.findUnique({
-      where: { email: payload.email }
-    });
-
+    const existing = await prisma.user.findUnique({ where: { email: body.email.toLowerCase() } });
     if (existing) {
-      response.status(409).json({ message: "A business account with this email already exists." });
+      res.status(409).json({ message: "An account with this email already exists." });
       return;
     }
 
-    const passwordHash = await hashPassword(payload.password);
-    const merchant = await prisma.merchant.create({
+    const passwordHash = await bcrypt.hash(body.password, 10);
+    const user = await prisma.user.create({
       data: {
-        ...payload,
-        email: payload.email.toLowerCase(),
-        passwordHash
-      },
-      select: {
-        id: true,
-        businessName: true,
-        ownerName: true,
-        email: true,
-        phone: true,
-        whatsapp: true,
-        businessType: true,
-        neighborhood: true,
-        district: true,
-        addressLine: true,
-        description: true,
-        latitude: true,
-        longitude: true,
-        serviceRadiusKm: true,
-        verified: true,
-        aiEnabled: true
+        email: body.email.toLowerCase(),
+        passwordHash,
+        name: body.name,
+        role: body.role,
+        sellerStatus: body.role === "SELLER" ? "PENDING" : null
       }
     });
 
-    const token = signMerchantToken({
-      merchantId: merchant.id,
-      email: merchant.email
-    });
+    // Notify admins if this is a seller registration
+    if (body.role === "SELLER") {
+      await notifyNewSellerApplication(user.id);
+    }
 
-    response.status(201).json({
-      token,
-      merchant: serializeMerchant(merchant)
+    res.status(201).json({
+      token: signToken(user),
+      user: { id: user.id, email: user.email, name: user.name, role: user.role, sellerStatus: user.sellerStatus }
     });
-  } catch (error) {
-    next(error);
+  } catch (err) {
+    next(err);
   }
 });
 
-authRouter.post("/login", async (request, response, next) => {
+authRouter.post("/login", async (req, res, next) => {
   try {
-    const payload = loginSchema.parse(request.body);
-    const merchant = await prisma.merchant.findUnique({
-      where: { email: payload.email.toLowerCase() }
-    });
+    const body = loginSchema.parse(req.body);
 
-    if (!merchant) {
-      response.status(401).json({ message: "Invalid email or password." });
+    const user = await prisma.user.findUnique({ where: { email: body.email.toLowerCase() } });
+    if (!user) {
+      res.status(401).json({ message: "Invalid email or password." });
       return;
     }
 
-    const valid = await verifyPassword(payload.password, merchant.passwordHash);
+    const valid = await bcrypt.compare(body.password, user.passwordHash);
     if (!valid) {
-      response.status(401).json({ message: "Invalid email or password." });
+      res.status(401).json({ message: "Invalid email or password." });
       return;
     }
 
-    const token = signMerchantToken({
-      merchantId: merchant.id,
-      email: merchant.email
+    res.json({
+      token: signToken(user),
+      user: { id: user.id, email: user.email, name: user.name, role: user.role, sellerStatus: user.sellerStatus }
     });
-
-    response.json({
-      token,
-      merchant: serializeMerchant(merchant)
-    });
-  } catch (error) {
-    next(error);
+  } catch (err) {
+    next(err);
   }
 });
 
-authRouter.get("/me", requireMerchantAuth, async (request, response) => {
-  response.json({
-    merchant: request.merchant
-  });
+authRouter.get("/me", requireAuth, async (req, res, next) => {
+  try {
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: req.user!.id } });
+    res.json({ id: user.id, email: user.email, name: user.name, role: user.role, sellerStatus: user.sellerStatus });
+  } catch (err) {
+    next(err);
+  }
 });
