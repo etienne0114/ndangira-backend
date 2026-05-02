@@ -8,6 +8,7 @@ const envSchema = z.object({
   PORT: z.coerce.number().default(4000),
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
   CORS_ORIGIN: z.string().default("http://localhost:5173"),
+  JWT_SECRET: z.string().min(8, "JWT_SECRET is required"),
   OPENROUTER_API_KEY: z.string().optional(),
   DEEPSEEK_API_KEY: z.string().optional(),
   OPENROUTER_MODEL: z.string().default("deepseek/deepseek-chat"),
