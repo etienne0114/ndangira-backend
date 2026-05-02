@@ -1,54 +1,75 @@
-import { InventoryStatus, ListingCategory, Prisma } from "@prisma/client";
+import { InventoryStatus, Prisma } from "@prisma/client";
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { calculateDistanceKm } from "../utils/distance.js";
 
-const createListingSchema = z.object({
-  title: z.string().min(3),
-  description: z.string().min(10),
-  category: z.nativeEnum(ListingCategory),
-  priceRwf: z.number().int().positive(),
-  unitLabel: z.string().min(1),
-  inventoryStatus: z.nativeEnum(InventoryStatus).default(InventoryStatus.IN_STOCK),
-  isFeatured: z.boolean().optional().default(false),
-  freshnessNote: z.string().optional(),
-  imageUrl: z.string().url().optional(),
-  tags: z.array(z.string()).default([]),
-  merchant: z.object({
-    businessName: z.string().min(2),
-    ownerName: z.string().min(2),
-    phone: z.string().min(8),
-    whatsapp: z.string().optional(),
-    neighborhood: z.string().min(2),
-    district: z.string().min(2),
-    latitude: z.number(),
-    longitude: z.number(),
-    verified: z.boolean().optional().default(false)
+/** Normalize a human label into UPPER_SNAKE_CASE (mirrors categories route). */
+function toName(label: string): string {
+  return label.trim().toUpperCase().replace(/\s+/g, "_").replace(/[^A-Z0-9_]/g, "");
+}
+
+// ---------------------------------------------------------------------------
+// Validation schemas
+// ---------------------------------------------------------------------------
+
+const createListingSchema = z
+  .object({
+    title:           z.string().min(3),
+    description:     z.string().min(10),
+    // Accept either an existing category ID or a label to create/find.
+    categoryId:      z.string().optional(),
+    categoryName:    z.string().min(2).optional(),
+    priceRwf:        z.number().int().positive(),
+    unitLabel:       z.string().min(1),
+    inventoryStatus: z.nativeEnum(InventoryStatus).default(InventoryStatus.IN_STOCK),
+    isFeatured:      z.boolean().optional().default(false),
+    freshnessNote:   z.string().optional(),
+    imageUrl:        z.string().url().optional(),
+    tags:            z.array(z.string()).default([]),
+    merchant: z.object({
+      businessName: z.string().min(2),
+      ownerName:    z.string().min(2),
+      phone:        z.string().min(8),
+      whatsapp:     z.string().optional(),
+      neighborhood: z.string().min(2),
+      district:     z.string().min(2),
+      latitude:     z.number(),
+      longitude:    z.number(),
+      verified:     z.boolean().optional().default(false)
+    })
   })
-});
+  .refine((d) => d.categoryId || d.categoryName, {
+    message: "Provide either categoryId (existing) or categoryName (to create).",
+    path: ["categoryId"]
+  });
 
 const searchSchema = z.object({
-  q: z.string().optional(),
-  category: z.nativeEnum(ListingCategory).optional(),
-  neighborhood: z.string().optional(),
-  lat: z.coerce.number().optional(),
-  lng: z.coerce.number().optional(),
-  maxDistanceKm: z.coerce.number().positive().optional(),
-  minPrice: z.coerce.number().positive().optional(),
-  maxPrice: z.coerce.number().positive().optional(),
+  q:               z.string().optional(),
+  category:        z.string().optional(),   // match by category name, e.g. "GROCERIES"
+  categoryId:      z.string().optional(),   // match by category id
+  neighborhood:    z.string().optional(),
+  lat:             z.coerce.number().optional(),
+  lng:             z.coerce.number().optional(),
+  maxDistanceKm:   z.coerce.number().positive().optional(),
+  minPrice:        z.coerce.number().positive().optional(),
+  maxPrice:        z.coerce.number().positive().optional(),
   inventoryStatus: z.nativeEnum(InventoryStatus).optional(),
-  verifiedOnly: z.coerce.boolean().optional(),
-  sort: z.enum(["distance", "price-asc", "price-desc", "fresh", "newest"]).default("distance"),
-  limit: z.coerce.number().int().positive().max(100).default(20),
-  offset: z.coerce.number().int().nonnegative().default(0)
+  verifiedOnly:    z.coerce.boolean().optional(),
+  sort:            z.enum(["distance", "price-asc", "price-desc", "fresh", "newest"]).default("distance"),
+  limit:           z.coerce.number().int().positive().max(100).default(20),
+  offset:          z.coerce.number().int().nonnegative().default(0)
 });
 
-type ListingWithMerchant = Prisma.ListingGetPayload<{
-  include: { merchant: true };
+// ---------------------------------------------------------------------------
+// Serializer
+// ---------------------------------------------------------------------------
+
+type ListingWithRelations = Prisma.ListingGetPayload<{
+  include: { merchant: true; category: true };
 }>;
 
-function serializeListings(listings: ListingWithMerchant[], lat?: number, lng?: number) {
+function serializeListings(listings: ListingWithRelations[], lat?: number, lng?: number) {
   return listings.map((listing) => {
     const distanceKm =
       lat !== undefined && lng !== undefined
@@ -56,53 +77,65 @@ function serializeListings(listings: ListingWithMerchant[], lat?: number, lng?: 
         : null;
 
     return {
-      id: listing.id,
-      title: listing.title,
-      description: listing.description,
-      category: listing.category,
-      priceRwf: listing.priceRwf,
-      unitLabel: listing.unitLabel,
+      id:             listing.id,
+      title:          listing.title,
+      description:    listing.description,
+      // category name kept for frontend backward-compatibility ("GROCERIES")
+      category:       listing.category.name,
+      categoryId:     listing.category.id,
+      categoryLabel:  listing.category.label,
+      priceRwf:       listing.priceRwf,
+      unitLabel:      listing.unitLabel,
       inventoryStatus: listing.inventoryStatus,
-      isFeatured: listing.isFeatured,
-      freshnessNote: listing.freshnessNote,
-      imageUrl: listing.imageUrl,
-      tags: listing.tags,
-      createdAt: listing.createdAt,
+      isFeatured:     listing.isFeatured,
+      freshnessNote:  listing.freshnessNote,
+      imageUrl:       listing.imageUrl,
+      tags:           listing.tags,
+      createdAt:      listing.createdAt,
       merchant: {
-        id: listing.merchant.id,
+        id:           listing.merchant.id,
         businessName: listing.merchant.businessName,
-        ownerName: listing.merchant.ownerName,
-        phone: listing.merchant.phone,
-        whatsapp: listing.merchant.whatsapp,
+        ownerName:    listing.merchant.ownerName,
+        phone:        listing.merchant.phone,
+        whatsapp:     listing.merchant.whatsapp,
         neighborhood: listing.merchant.neighborhood,
-        district: listing.merchant.district,
-        latitude: listing.merchant.latitude,
-        longitude: listing.merchant.longitude,
-        verified: listing.merchant.verified
+        district:     listing.merchant.district,
+        latitude:     listing.merchant.latitude,
+        longitude:    listing.merchant.longitude,
+        verified:     listing.merchant.verified
       },
       distanceKm
     };
   });
 }
 
+// ---------------------------------------------------------------------------
+// Router
+// ---------------------------------------------------------------------------
+
 export const listingsRouter = Router();
 
+// GET /api/listings
 listingsRouter.get("/", async (request, response, next) => {
   try {
     const query = searchSchema.parse(request.query);
 
-    // Build where clause with all filters
     const where: Prisma.ListingWhereInput = {
       ...(query.q
         ? {
             OR: [
-              { title: { contains: query.q, mode: "insensitive" } },
+              { title:       { contains: query.q, mode: "insensitive" } },
               { description: { contains: query.q, mode: "insensitive" } },
-              { tags: { has: query.q.toLowerCase() } }
+              { tags:        { has: query.q.toLowerCase() } }
             ]
           }
         : {}),
-      ...(query.category ? { category: query.category } : {}),
+      // Category filter: prefer explicit ID, fall back to name string
+      ...(query.categoryId
+        ? { categoryId: query.categoryId }
+        : query.category
+          ? { category: { name: { equals: query.category.toUpperCase(), mode: "insensitive" } } }
+          : {}),
       ...(query.inventoryStatus ? { inventoryStatus: query.inventoryStatus } : {}),
       ...(query.minPrice || query.maxPrice
         ? {
@@ -124,52 +157,39 @@ listingsRouter.get("/", async (request, response, next) => {
           : {})
     };
 
-    // Get total count for pagination
     const total = await prisma.listing.count({ where });
 
-    // Fetch listings
     const listings = await prisma.listing.findMany({
       where,
-      include: {
-        merchant: true
-      },
+      include: { merchant: true, category: true },
       orderBy: [{ isFeatured: "desc" }, { createdAt: "desc" }],
-      take: query.limit,
-      skip: query.offset
+      take:  query.limit,
+      skip:  query.offset
     });
 
     let serialized = serializeListings(listings, query.lat, query.lng);
 
-    // Apply distance filter if specified
-    const maxDistanceKm = query.maxDistanceKm;
-    if (maxDistanceKm !== undefined) {
+    if (query.maxDistanceKm !== undefined) {
       serialized = serialized.filter(
-        (listing) => listing.distanceKm !== null && listing.distanceKm <= maxDistanceKm
+        (l) => l.distanceKm !== null && l.distanceKm <= query.maxDistanceKm!
       );
     }
 
-    // Apply sorting
     serialized.sort((a, b) => {
       switch (query.sort) {
-        case "price-asc":
-          return a.priceRwf - b.priceRwf;
-        case "price-desc":
-          return b.priceRwf - a.priceRwf;
-        case "fresh":
-          return Number(Boolean(b.freshnessNote)) - Number(Boolean(a.freshnessNote));
-        case "newest":
-          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-        case "distance":
-        default:
-          return (a.distanceKm ?? Number.MAX_SAFE_INTEGER) - (b.distanceKm ?? Number.MAX_SAFE_INTEGER);
+        case "price-asc":  return a.priceRwf - b.priceRwf;
+        case "price-desc": return b.priceRwf - a.priceRwf;
+        case "fresh":      return Number(Boolean(b.freshnessNote)) - Number(Boolean(a.freshnessNote));
+        case "newest":     return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        default:           return (a.distanceKm ?? Number.MAX_SAFE_INTEGER) - (b.distanceKm ?? Number.MAX_SAFE_INTEGER);
       }
     });
 
     response.json({
-      items: serialized,
+      items:   serialized,
       total,
-      limit: query.limit,
-      offset: query.offset,
+      limit:   query.limit,
+      offset:  query.offset,
       hasMore: query.offset + query.limit < total
     });
   } catch (error) {
@@ -177,11 +197,12 @@ listingsRouter.get("/", async (request, response, next) => {
   }
 });
 
+// GET /api/listings/:id
 listingsRouter.get("/:id", async (request, response, next) => {
   try {
     const listing = await prisma.listing.findUnique({
-      where: { id: request.params.id },
-      include: { merchant: true }
+      where:   { id: request.params.id },
+      include: { merchant: true, category: true }
     });
 
     if (!listing) {
@@ -195,27 +216,38 @@ listingsRouter.get("/:id", async (request, response, next) => {
   }
 });
 
+// POST /api/listings
 listingsRouter.post("/", async (request, response, next) => {
   try {
     const payload = createListingSchema.parse(request.body);
 
+    // Resolve category: use supplied ID or upsert by name
+    let categoryId = payload.categoryId;
+    if (!categoryId && payload.categoryName) {
+      const name = toName(payload.categoryName);
+      const cat = await prisma.category.upsert({
+        where:  { name },
+        create: { name, label: payload.categoryName.trim(), isSystem: false },
+        update: {}
+      });
+      categoryId = cat.id;
+    }
+
     const created = await prisma.listing.create({
       data: {
-        title: payload.title,
-        description: payload.description,
-        category: payload.category,
-        priceRwf: payload.priceRwf,
-        unitLabel: payload.unitLabel,
+        title:           payload.title,
+        description:     payload.description,
+        category:        { connect: { id: categoryId! } },
+        priceRwf:        payload.priceRwf,
+        unitLabel:       payload.unitLabel,
         inventoryStatus: payload.inventoryStatus,
-        isFeatured: payload.isFeatured,
-        freshnessNote: payload.freshnessNote,
-        imageUrl: payload.imageUrl,
-        tags: payload.tags.map((tag) => tag.toLowerCase()),
-        merchant: {
-          create: payload.merchant
-        }
+        isFeatured:      payload.isFeatured,
+        freshnessNote:   payload.freshnessNote,
+        imageUrl:        payload.imageUrl,
+        tags:            payload.tags.map((t) => t.toLowerCase()),
+        merchant:        { create: payload.merchant }
       },
-      include: { merchant: true }
+      include: { merchant: true, category: true }
     });
 
     response.status(201).json(serializeListings([created])[0]);

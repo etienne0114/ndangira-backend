@@ -2,6 +2,7 @@ import cors from "cors";
 import express from "express";
 import { env } from "./config/env.js";
 import { aiRouter } from "./routes/ai.js";
+import { categoriesRouter } from "./routes/categories.js";
 import { healthRouter } from "./routes/health.js";
 import { listingsRouter } from "./routes/listings.js";
 import { statsRouter } from "./routes/stats.js";
@@ -22,6 +23,7 @@ app.get("/", (_request, response) => {
     version: "1.0.0",
     endpoints: {
       health: "/health",
+      categories: "/api/categories",
       listings: "/api/listings",
       ai: "/api/ai/assistant",
       stats: "/api/stats"
@@ -30,6 +32,7 @@ app.get("/", (_request, response) => {
 });
 
 app.use("/health", healthRouter);
+app.use("/api/categories", categoriesRouter);
 app.use("/api/listings", listingsRouter);
 app.use("/api/ai", aiRouter);
 app.use("/api/stats", statsRouter);

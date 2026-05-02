@@ -1,14 +1,13 @@
 import { Router } from "express";
-import { ListingCategory } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { completeChat } from "../lib/openrouter.js";
 import { calculateDistanceKm } from "../utils/distance.js";
 
 const aiRequestSchema = z.object({
-  message: z.string().min(3).max(500),
-  lat: z.number().optional(),
-  lng: z.number().optional(),
+  message:        z.string().min(3).max(500),
+  lat:            z.number().optional(),
+  lng:            z.number().optional(),
   conversationId: z.string().optional()
 });
 
@@ -19,7 +18,7 @@ aiRouter.post("/assistant", async (request, response, next) => {
     const payload = aiRequestSchema.parse(request.body);
 
     const allListings = await prisma.listing.findMany({
-      include: { merchant: true },
+      include: { merchant: true, category: true },
       take: 24,
       orderBy: [{ isFeatured: "desc" }, { createdAt: "desc" }]
     });
@@ -49,16 +48,16 @@ aiRouter.post("/assistant", async (request, response, next) => {
             : "distance unknown";
 
         const freshness = listing.freshnessNote ? ` | Fresh: ${listing.freshnessNote}` : "";
-        const stock = listing.inventoryStatus !== "IN_STOCK" ? ` | ${listing.inventoryStatus}` : "";
-        const verified = listing.merchant.verified ? " | ✓ Verified" : "";
+        const stock     = listing.inventoryStatus !== "IN_STOCK" ? ` | ${listing.inventoryStatus}` : "";
+        const verified  = listing.merchant.verified ? " | ✓ Verified" : "";
 
-        return `• ${listing.title} - ${listing.priceRwf.toLocaleString()} RWF ${listing.unitLabel} | ${listing.category} | ${listing.merchant.businessName} in ${listing.merchant.neighborhood} | ${distance}${freshness}${stock}${verified}`;
+        return `• ${listing.title} - ${listing.priceRwf.toLocaleString()} RWF ${listing.unitLabel} | ${listing.category.name} | ${listing.merchant.businessName} in ${listing.merchant.neighborhood} | ${distance}${freshness}${stock}${verified}`;
       })
       .join("\n");
 
-    const lowerMessage = payload.message.toLowerCase();
-    const categoryInsights = buildCategoryInsights(nearbyListings);
-    const priceComparison = buildPriceComparison(lowerMessage, nearbyListings);
+    const lowerMessage        = payload.message.toLowerCase();
+    const categoryInsights    = buildCategoryInsights(nearbyListings);
+    const priceComparison     = buildPriceComparison(lowerMessage, nearbyListings);
     const neighborhoodHighlights = buildNeighborhoodHighlights(nearbyListings);
 
     const systemPrompt = `You are Ndangira Concierge, an expert shopping assistant for Kigali, Rwanda.
@@ -89,33 +88,30 @@ Neighborhood insights:
 ${neighborhoodHighlights}`;
 
     const reply = await completeChat([
-      {
-        role: "system",
-        content: systemPrompt
-      },
-      {
-        role: "user",
-        content: payload.message
-      }
+      { role: "system", content: systemPrompt },
+      { role: "user",   content: payload.message }
     ]);
 
-    const suggestions = generateSuggestions(payload.message, nearbyListings);
-    const relatedListings = rankRelevantListings(payload.message, nearbyListings).slice(0, 4).map((listing) => {
-      const listingWithDistance = listing as typeof listing & { distance?: number };
-      return {
-        id: listing.id,
-        title: listing.title,
-        priceRwf: listing.priceRwf,
-        merchant: listing.merchant.businessName,
-        neighborhood: listing.merchant.neighborhood,
-        distance: listingWithDistance.distance ?? null,
-        category: listing.category,
-        unitLabel: listing.unitLabel,
-        inventoryStatus: listing.inventoryStatus,
-        freshnessNote: listing.freshnessNote ?? null,
-        verified: listing.merchant.verified
-      };
-    });
+    const suggestions     = generateSuggestions(payload.message, nearbyListings);
+    const relatedListings = rankRelevantListings(payload.message, nearbyListings)
+      .slice(0, 4)
+      .map((listing) => {
+        const listingWithDistance = listing as typeof listing & { distance?: number };
+        return {
+          id:             listing.id,
+          title:          listing.title,
+          priceRwf:       listing.priceRwf,
+          merchant:       listing.merchant.businessName,
+          neighborhood:   listing.merchant.neighborhood,
+          distance:       listingWithDistance.distance ?? null,
+          category:       listing.category.name,
+          categoryLabel:  listing.category.label,
+          unitLabel:      listing.unitLabel,
+          inventoryStatus: listing.inventoryStatus,
+          freshnessNote:  listing.freshnessNote ?? null,
+          verified:       listing.merchant.verified
+        };
+      });
 
     response.json({
       reply,
@@ -128,38 +124,35 @@ ${neighborhoodHighlights}`;
   }
 });
 
-function normalizeCategory(category: string) {
-  return category.toLowerCase().replace(/_/g, " ");
+function normalizeCategory(name: string) {
+  return name.toLowerCase().replace(/_/g, " ");
 }
 
-function buildCategoryInsights(listings: any[]) {
-  const counts = new Map<ListingCategory, number>();
+function buildCategoryInsights(listings: Array<{ category: { name: string } }>) {
+  const counts = new Map<string, number>();
 
   for (const listing of listings) {
-    counts.set(listing.category, (counts.get(listing.category) ?? 0) + 1);
+    const name = listing.category.name;
+    counts.set(name, (counts.get(name) ?? 0) + 1);
   }
 
-  if (counts.size === 0) {
-    return "No category insights available.";
-  }
+  if (counts.size === 0) return "No category insights available.";
 
   return Array.from(counts.entries())
-    .map(([category, count]) => `${normalizeCategory(category)}: ${count} options`)
+    .map(([name, count]) => `${normalizeCategory(name)}: ${count} options`)
     .join("\n");
 }
 
 function buildPriceComparison(message: string, listings: any[]) {
-  const ranked = rankRelevantListings(message, listings);
+  const ranked     = rankRelevantListings(message, listings);
   const candidates = ranked.slice(0, 5);
 
-  if (candidates.length === 0) {
-    return "No comparable listings available.";
-  }
+  if (candidates.length === 0) return "No comparable listings available.";
 
   const cheapest = [...candidates].sort((a, b) => a.priceRwf - b.priceRwf)[0];
   const priciest = [...candidates].sort((a, b) => b.priceRwf - a.priceRwf)[0];
-  const average = Math.round(
-    candidates.reduce((sum, listing) => sum + listing.priceRwf, 0) / candidates.length
+  const average  = Math.round(
+    candidates.reduce((sum: number, l: any) => sum + l.priceRwf, 0) / candidates.length
   );
 
   return [
@@ -169,11 +162,12 @@ function buildPriceComparison(message: string, listings: any[]) {
   ].join("\n");
 }
 
-function buildNeighborhoodHighlights(listings: any[]) {
+function buildNeighborhoodHighlights(listings: Array<{ merchant: { neighborhood: string } }>) {
   const grouped = new Map<string, number>();
 
   for (const listing of listings) {
-    grouped.set(listing.merchant.neighborhood, (grouped.get(listing.merchant.neighborhood) ?? 0) + 1);
+    const n = listing.merchant.neighborhood;
+    grouped.set(n, (grouped.get(n) ?? 0) + 1);
   }
 
   return Array.from(grouped.entries())
@@ -197,7 +191,7 @@ function scoreListing(listing: any, tokens: string[]) {
   const haystack = [
     listing.title,
     listing.description,
-    listing.category,
+    listing.category.name,
     listing.merchant.businessName,
     listing.merchant.neighborhood,
     ...(listing.tags ?? [])
@@ -206,23 +200,13 @@ function scoreListing(listing: any, tokens: string[]) {
     .toLowerCase();
 
   for (const token of tokens) {
-    if (haystack.includes(token)) {
-      score += 3;
-    }
+    if (haystack.includes(token)) score += 3;
   }
 
-  if (listing.merchant.verified) {
-    score += 1;
-  }
-  if (listing.isFeatured) {
-    score += 1;
-  }
-  if (listing.inventoryStatus === "IN_STOCK") {
-    score += 1;
-  }
-  if (listing.distance !== undefined) {
-    score += Math.max(0, 5 - listing.distance);
-  }
+  if (listing.merchant.verified)          score += 1;
+  if (listing.isFeatured)                 score += 1;
+  if (listing.inventoryStatus === "IN_STOCK") score += 1;
+  if (listing.distance !== undefined)     score += Math.max(0, 5 - listing.distance);
 
   return score;
 }
@@ -248,7 +232,7 @@ function generateSuggestions(message: string, listings: any[]): string[] {
   }
 
   if (listings.length > 0) {
-    const categories = [...new Set(listings.map((l) => l.category))];
+    const categories = [...new Set(listings.map((l) => l.category.name))];
     if (categories.length > 1) {
       suggestions.push(`Compare options across ${categories.join(" and ")}`);
     }
