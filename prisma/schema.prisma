@@ -7,76 +7,19 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum InventoryStatus {
-  IN_STOCK
-  LOW_STOCK
-  MADE_TO_ORDER
-}
-
-enum UserRole {
-  ADMIN
-  SELLER
-  CUSTOMER
-}
-
-enum SellerStatus {
-  PENDING
-  APPROVED
-  REJECTED
-}
-
-model User {
-  id            String         @id @default(cuid())
-  email         String         @unique
-  passwordHash  String
-  name          String
-  role          UserRole       @default(CUSTOMER)
-  sellerStatus  SellerStatus?
-  merchant      Merchant?
-  notifications Notification[]
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-}
-
 model Category {
   id        String    @id @default(cuid())
   name      String    @unique
   label     String
   isSystem  Boolean   @default(false)
   createdAt DateTime  @default(now())
-  listings  Listing[]
-}
-
-model Merchant {
-  id              String    @id @default(cuid())
-  userId          String?   @unique
-  user            User?     @relation(fields: [userId], references: [id])
-  businessName    String
-  ownerName       String
-  phone           String
-  whatsapp        String?
-  neighborhood    String
-  district        String
-  addressLine     String?
-  description     String?
-  latitude        Float
-  longitude       Float
-  serviceRadiusKm Int       @default(5)
-  verified        Boolean   @default(false)
-  aiEnabled       Boolean   @default(true)
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  listings        Listing[]
-
-  @@index([neighborhood])
+  Listing   Listing[]
 }
 
 model Listing {
   id              String          @id @default(cuid())
   title           String
   description     String
-  categoryId      String
-  category        Category        @relation(fields: [categoryId], references: [id])
   priceRwf        Int
   unitLabel       String
   inventoryStatus InventoryStatus @default(IN_STOCK)
@@ -85,12 +28,76 @@ model Listing {
   imageUrl        String?
   tags            String[]
   merchantId      String
-  merchant        Merchant        @relation(fields: [merchantId], references: [id], onDelete: Cascade)
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
+  categoryId      String
+  Category        Category        @relation(fields: [categoryId], references: [id])
+  Merchant        Merchant        @relation(fields: [merchantId], references: [id], onDelete: Cascade)
 
   @@index([categoryId, isFeatured])
   @@index([title])
+}
+
+model Merchant {
+  id              String          @id @default(cuid())
+  businessName    String
+  ownerName       String
+  phone           String
+  whatsapp        String?
+  neighborhood    String
+  district        String
+  latitude        Float
+  longitude       Float
+  verified        Boolean         @default(false)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  addressLine     String?
+  aiEnabled       Boolean         @default(true)
+  description     String?
+  serviceRadiusKm Int             @default(5)
+  userId          String?         @unique
+  email           String          @unique
+  passwordHash    String
+  businessType    ListingCategory
+  Listing         Listing[]
+  User            User?           @relation(fields: [userId], references: [id])
+
+  @@index([neighborhood])
+  @@index([businessType, neighborhood])
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  message   String
+  read      Boolean          @default(false)
+  metadata  Json?
+  createdAt DateTime         @default(now())
+  User      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@index([userId, read])
+}
+
+model User {
+  id           String         @id @default(cuid())
+  email        String         @unique
+  passwordHash String
+  name         String
+  role         UserRole       @default(CUSTOMER)
+  sellerStatus SellerStatus?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  Merchant     Merchant?
+  Notification Notification[]
+}
+
+enum InventoryStatus {
+  IN_STOCK
+  LOW_STOCK
+  MADE_TO_ORDER
 }
 
 enum NotificationType {
@@ -102,17 +109,27 @@ enum NotificationType {
   SYSTEM_ANNOUNCEMENT
 }
 
-model Notification {
-  id        String           @id @default(cuid())
-  userId    String
-  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type      NotificationType
-  title     String
-  message   String
-  read      Boolean          @default(false)
-  metadata  Json?
-  createdAt DateTime         @default(now())
+enum SellerStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
 
-  @@index([userId, read])
-  @@index([createdAt])
+enum UserRole {
+  ADMIN
+  SELLER
+  CUSTOMER
+}
+
+enum ListingCategory {
+  GROCERIES
+  RESTAURANTS
+  FASHION
+  ELECTRONICS
+  HOME
+  HEALTH
+  SERVICES
+  SUPERMARKET
+  PHARMACY
+  HOUSING
 }
