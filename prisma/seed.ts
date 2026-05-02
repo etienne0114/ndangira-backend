@@ -1,5 +1,5 @@
 import bcrypt from "bcryptjs";
-import { InventoryStatus, PrismaClient } from "@prisma/client";
+import { InventoryStatus, ListingCategory, PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
@@ -21,6 +21,7 @@ const SELLERS = [
     email: "aline.seller@gmail.com",
     name: "Aline Uwimana",
     businessName: "Kimironko Fresh Hub",
+    businessType: "GROCERIES" as ListingCategory,
     phone: "+250788000111",
     whatsapp: "+250788000111",
     neighborhood: "Kimironko",
@@ -35,6 +36,7 @@ const SELLERS = [
     email: "eric.seller@gmail.com",
     name: "Eric Nshimiyimana",
     businessName: "Nyamirambo Home Select",
+    businessType: "HOME" as ListingCategory,
     phone: "+250788000222",
     whatsapp: "+250788000222",
     neighborhood: "Nyamirambo",
@@ -49,6 +51,7 @@ const SELLERS = [
     email: "grace.seller@gmail.com",
     name: "Grace Mukamana",
     businessName: "Kacyiru Tech Corner",
+    businessType: "ELECTRONICS" as ListingCategory,
     phone: "+250788000333",
     whatsapp: "+250788000333",
     neighborhood: "Kacyiru",
@@ -63,6 +66,7 @@ const SELLERS = [
     email: "didier.seller@gmail.com",
     name: "Didier Habimana",
     businessName: "Remera Care Pharmacy",
+    businessType: "PHARMACY" as ListingCategory,
     phone: "+250788000444",
     whatsapp: "+250788000444",
     neighborhood: "Remera",
@@ -77,6 +81,7 @@ const SELLERS = [
     email: "clarisse.seller@gmail.com",
     name: "Clarisse Umutoni",
     businessName: "Kicukiro Homes Desk",
+    businessType: "HOUSING" as ListingCategory,
     phone: "+250788000555",
     whatsapp: "+250788000555",
     neighborhood: "Kicukiro",
@@ -90,6 +95,11 @@ const SELLERS = [
 ];
 
 async function main() {
+  // Clean up existing data
+  await prisma.listing.deleteMany();
+  await prisma.merchant.deleteMany();
+
+  // Upsert categories
   await Promise.all(
     SYSTEM_CATEGORIES.map((category) =>
       prisma.category.upsert({
@@ -101,8 +111,9 @@ async function main() {
   );
 
   const allCategories = await prisma.category.findMany();
-  const catId = Object.fromEntries(allCategories.map((category) => [category.name, category.id]));
+  const categoryMap = Object.fromEntries(allCategories.map((category) => [category.name, category.id]));
 
+  // Create admin user
   const adminHash = await bcrypt.hash("admin123", 10);
   await prisma.user.upsert({
     where: { email: "admin@gmail.com" },
@@ -110,9 +121,7 @@ async function main() {
     update: { passwordHash: adminHash, role: "ADMIN", name: "Admin", sellerStatus: null }
   });
 
-  await prisma.listing.deleteMany();
-  await prisma.merchant.deleteMany();
-
+  // Create sellers and merchants
   const sellerHash = await bcrypt.hash("seller123", 10);
   const merchants = await Promise.all(
     SELLERS.map(async (seller) => {
@@ -136,7 +145,10 @@ async function main() {
       return prisma.merchant.create({
         data: {
           userId: user.id,
+          email: seller.email,
+          passwordHash: sellerHash,
           businessName: seller.businessName,
+          businessType: seller.businessType,
           ownerName: seller.name,
           phone: seller.phone,
           whatsapp: seller.whatsapp,
@@ -152,12 +164,13 @@ async function main() {
     })
   );
 
+  // Create listings
   await prisma.listing.createMany({
     data: [
       {
         title: "Fresh Tomatoes Basket",
         description: "Same-morning tomatoes sourced from nearby farms and ready for pickup.",
-        categoryId: catId["GROCERIES"],
+        categoryId: categoryMap["GROCERIES"],
         priceRwf: 3500,
         unitLabel: "basket",
         inventoryStatus: InventoryStatus.IN_STOCK,
@@ -169,7 +182,7 @@ async function main() {
       {
         title: "Avocado Pair Pack",
         description: "Ripe Hass avocados, ideal for breakfast or juice.",
-        categoryId: catId["GROCERIES"],
+        categoryId: categoryMap["GROCERIES"],
         priceRwf: 1800,
         unitLabel: "2 pieces",
         inventoryStatus: InventoryStatus.LOW_STOCK,
@@ -180,7 +193,7 @@ async function main() {
       {
         title: "Tailored Curtains",
         description: "Custom measurement curtains with delivery in Kigali.",
-        categoryId: catId["HOME"],
+        categoryId: categoryMap["HOME"],
         priceRwf: 45000,
         unitLabel: "set",
         inventoryStatus: InventoryStatus.MADE_TO_ORDER,
@@ -190,7 +203,7 @@ async function main() {
       {
         title: "Bluetooth Speaker",
         description: "Portable speaker with strong battery life and clear sound.",
-        categoryId: catId["ELECTRONICS"],
+        categoryId: categoryMap["ELECTRONICS"],
         priceRwf: 38000,
         unitLabel: "piece",
         inventoryStatus: InventoryStatus.IN_STOCK,
@@ -201,7 +214,7 @@ async function main() {
       {
         title: "Hair Braiding Appointment",
         description: "Fast neighborhood braiding service with WhatsApp booking.",
-        categoryId: catId["SERVICES"],
+        categoryId: categoryMap["SERVICES"],
         priceRwf: 12000,
         unitLabel: "session",
         inventoryStatus: InventoryStatus.IN_STOCK,
@@ -211,7 +224,7 @@ async function main() {
       {
         title: "Pain Relief Tablets",
         description: "Essential over-the-counter pain relief available for same-hour pickup.",
-        categoryId: catId["PHARMACY"],
+        categoryId: categoryMap["PHARMACY"],
         priceRwf: 5500,
         unitLabel: "box",
         inventoryStatus: InventoryStatus.IN_STOCK,
@@ -220,9 +233,20 @@ async function main() {
         merchantId: merchants[3].id
       },
       {
+        title: "Baby Formula Pack",
+        description: "Trusted infant formula available near Remera and Kimironko.",
+        categoryId: categoryMap["PHARMACY"],
+        priceRwf: 18500,
+        unitLabel: "tin",
+        inventoryStatus: InventoryStatus.LOW_STOCK,
+        freshnessNote: "3 tins remaining",
+        tags: ["family", "baby", "pharmacy"],
+        merchantId: merchants[3].id
+      },
+      {
         title: "Weekly Supermarket Basket",
         description: "Rice, milk, bread, oil, and cleaning basics bundled for busy households.",
-        categoryId: catId["SUPERMARKET"],
+        categoryId: categoryMap["SUPERMARKET"],
         priceRwf: 28500,
         unitLabel: "basket",
         inventoryStatus: InventoryStatus.IN_STOCK,
@@ -233,7 +257,7 @@ async function main() {
       {
         title: "1-Bedroom Apartment Listing",
         description: "Ready-to-move apartment listing close to bus routes and neighborhood shops.",
-        categoryId: catId["HOUSING"],
+        categoryId: categoryMap["HOUSING"],
         priceRwf: 250000,
         unitLabel: "month",
         inventoryStatus: InventoryStatus.MADE_TO_ORDER,
@@ -244,7 +268,10 @@ async function main() {
     ]
   });
 
-  console.log("Seed complete: 10 categories, 5 approved sellers, 5 merchants, 8 listings.");
+  console.log("✅ Database seeded successfully!");
+  console.log(`Created ${allCategories.length} categories`);
+  console.log(`Created ${merchants.length} merchants`);
+  console.log("Created 9 listings");
 }
 
 main()
