@@ -1,3 +1,4 @@
+import bcrypt from "bcryptjs";
 import { InventoryStatus, PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
@@ -28,14 +29,61 @@ async function main() {
   const allCategories = await prisma.category.findMany();
   const catId = Object.fromEntries(allCategories.map((c) => [c.name, c.id]));
 
-  // 2. Clear existing data (order matters for FK constraints)
+  // 2. Seed admin user
+  const adminHash = await bcrypt.hash("admin123", 10);
+  await prisma.user.upsert({
+    where: { email: "admin@gmail.com" },
+    create: { email: "admin@gmail.com", passwordHash: adminHash, name: "Admin", role: "ADMIN" },
+    update: { passwordHash: adminHash, role: "ADMIN" }
+  });
+
+  // 3. Clear existing data (order matters for FK constraints)
   await prisma.listing.deleteMany();
   await prisma.merchant.deleteMany();
 
-  // 3. Create merchants
+  // 4. Seed approved sellers for the demo inventory
+  const sellerHash = await bcrypt.hash("seller123", 10);
+  const [aline, eric, grace] = await Promise.all([
+    prisma.user.upsert({
+      where: { email: "aline.seller@gmail.com" },
+      create: {
+        email: "aline.seller@gmail.com",
+        passwordHash: sellerHash,
+        name: "Aline Uwimana",
+        role: "SELLER",
+        sellerStatus: "APPROVED"
+      },
+      update: { passwordHash: sellerHash, role: "SELLER", sellerStatus: "APPROVED", name: "Aline Uwimana" }
+    }),
+    prisma.user.upsert({
+      where: { email: "eric.seller@gmail.com" },
+      create: {
+        email: "eric.seller@gmail.com",
+        passwordHash: sellerHash,
+        name: "Eric Nshimiyimana",
+        role: "SELLER",
+        sellerStatus: "APPROVED"
+      },
+      update: { passwordHash: sellerHash, role: "SELLER", sellerStatus: "APPROVED", name: "Eric Nshimiyimana" }
+    }),
+    prisma.user.upsert({
+      where: { email: "grace.seller@gmail.com" },
+      create: {
+        email: "grace.seller@gmail.com",
+        passwordHash: sellerHash,
+        name: "Grace Mukamana",
+        role: "SELLER",
+        sellerStatus: "APPROVED"
+      },
+      update: { passwordHash: sellerHash, role: "SELLER", sellerStatus: "APPROVED", name: "Grace Mukamana" }
+    })
+  ]);
+
+  // 5. Create merchants linked to real seller accounts
   const [kimironko, nyamirambo, kacyiru] = await Promise.all([
     prisma.merchant.create({
       data: {
+        userId:       aline.id,
         businessName: "Kimironko Fresh Hub",
         ownerName:    "Aline Uwimana",
         phone:        "+250788000111",
@@ -49,6 +97,7 @@ async function main() {
     }),
     prisma.merchant.create({
       data: {
+        userId:       eric.id,
         businessName: "Nyamirambo Home Select",
         ownerName:    "Eric Nshimiyimana",
         phone:        "+250788000222",
@@ -62,6 +111,7 @@ async function main() {
     }),
     prisma.merchant.create({
       data: {
+        userId:       grace.id,
         businessName: "Kacyiru Tech Corner",
         ownerName:    "Grace Mukamana",
         phone:        "+250788000333",
@@ -75,7 +125,7 @@ async function main() {
     })
   ]);
 
-  // 4. Create listings
+  // 6. Create listings
   await prisma.listing.createMany({
     data: [
       {

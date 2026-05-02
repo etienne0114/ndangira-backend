@@ -121,6 +121,7 @@ listingsRouter.get("/", async (request, response, next) => {
     const query = searchSchema.parse(request.query);
 
     const where: Prisma.ListingWhereInput = {
+      AND: [{ merchant: { user: { role: "SELLER", sellerStatus: "APPROVED" } } }],
       ...(query.q
         ? {
             OR: [
@@ -216,41 +217,12 @@ listingsRouter.get("/:id", async (request, response, next) => {
   }
 });
 
-// POST /api/listings
+// Listing writes are handled by /api/seller/listings so every listing belongs
+// to an authenticated, approved seller.
 listingsRouter.post("/", async (request, response, next) => {
   try {
-    const payload = createListingSchema.parse(request.body);
-
-    // Resolve category: use supplied ID or upsert by name
-    let categoryId = payload.categoryId;
-    if (!categoryId && payload.categoryName) {
-      const name = toName(payload.categoryName);
-      const cat = await prisma.category.upsert({
-        where:  { name },
-        create: { name, label: payload.categoryName.trim(), isSystem: false },
-        update: {}
-      });
-      categoryId = cat.id;
-    }
-
-    const created = await prisma.listing.create({
-      data: {
-        title:           payload.title,
-        description:     payload.description,
-        category:        { connect: { id: categoryId! } },
-        priceRwf:        payload.priceRwf,
-        unitLabel:       payload.unitLabel,
-        inventoryStatus: payload.inventoryStatus,
-        isFeatured:      payload.isFeatured,
-        freshnessNote:   payload.freshnessNote,
-        imageUrl:        payload.imageUrl,
-        tags:            payload.tags.map((t) => t.toLowerCase()),
-        merchant:        { create: payload.merchant }
-      },
-      include: { merchant: true, category: true }
-    });
-
-    response.status(201).json(serializeListings([created])[0]);
+    createListingSchema.parse(request.body);
+    response.status(405).json({ message: "Use /api/seller/listings to create seller-owned listings." });
   } catch (error) {
     next(error);
   }

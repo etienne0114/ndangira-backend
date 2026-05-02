@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
+import { requireAuth, requireRole } from "../middleware/auth.js";
 
 /** Normalize a human label into a stable UPPER_SNAKE_CASE name. */
 function toName(label: string): string {
@@ -13,6 +14,28 @@ const createCategorySchema = z.object({
 
 export const categoriesRouter = Router();
 
+function requireApprovedSellerOrAdmin(
+  request: import("express").Request,
+  response: import("express").Response,
+  next: import("express").NextFunction
+): void {
+  if (request.user?.role === "ADMIN") {
+    next();
+    return;
+  }
+
+  prisma.user
+    .findUnique({ where: { id: request.user!.id }, select: { sellerStatus: true } })
+    .then((user) => {
+      if (!user || user.sellerStatus !== "APPROVED") {
+        response.status(403).json({ message: "Your seller account must be approved before creating categories." });
+        return;
+      }
+      next();
+    })
+    .catch(next);
+}
+
 /**
  * GET /api/categories
  * Returns all categories ordered: system first, then custom alphabetically.
@@ -22,7 +45,15 @@ categoriesRouter.get("/", async (_request, response, next) => {
   try {
     const categories = await prisma.category.findMany({
       orderBy: [{ isSystem: "desc" }, { label: "asc" }],
-      include: { _count: { select: { listings: true } } }
+      include: {
+        _count: {
+          select: {
+            listings: {
+              where: { merchant: { user: { role: "SELLER", sellerStatus: "APPROVED" } } }
+            }
+          }
+        }
+      }
     });
 
     response.json({
@@ -51,7 +82,12 @@ categoriesRouter.get("/", async (_request, response, next) => {
  * System categories (GROCERIES, HOME, …) are never duplicated — the same
  * idempotency rule applies.
  */
-categoriesRouter.post("/", async (request, response, next) => {
+categoriesRouter.post(
+  "/",
+  requireAuth,
+  requireRole("ADMIN", "SELLER"),
+  requireApprovedSellerOrAdmin,
+  async (request, response, next) => {
   try {
     const { label } = createCategorySchema.parse(request.body);
     const name = toName(label);

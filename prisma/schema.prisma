@@ -13,6 +13,30 @@ enum InventoryStatus {
   MADE_TO_ORDER
 }
 
+enum UserRole {
+  ADMIN
+  SELLER
+  CUSTOMER
+}
+
+enum SellerStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model User {
+  id           String       @id @default(cuid())
+  email        String       @unique
+  passwordHash String
+  name         String
+  role         UserRole     @default(CUSTOMER)
+  sellerStatus SellerStatus?
+  merchant     Merchant?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+}
+
 model Category {
   id        String    @id @default(cuid())
   name      String    @unique
@@ -24,6 +48,8 @@ model Category {
 
 model Merchant {
   id           String    @id @default(cuid())
+  userId       String?   @unique
+  user         User?     @relation(fields: [userId], references: [id])
   businessName String
   ownerName    String
   phone        String

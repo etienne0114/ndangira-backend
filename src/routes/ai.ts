@@ -18,6 +18,7 @@ aiRouter.post("/assistant", async (request, response, next) => {
     const payload = aiRequestSchema.parse(request.body);
 
     const allListings = await prisma.listing.findMany({
+      where: { merchant: { user: { role: "SELLER", sellerStatus: "APPROVED" } } },
       include: { merchant: true, category: true },
       take: 24,
       orderBy: [{ isFeatured: "desc" }, { createdAt: "desc" }]
