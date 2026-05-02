@@ -9,8 +9,9 @@ const envSchema = z.object({
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
   CORS_ORIGIN: z.string().default("http://localhost:5173"),
   OPENROUTER_API_KEY: z.string().optional(),
-  OPENROUTER_MODEL: z.string().default("deepseek/deepseek-chat-v3-0324"),
-  OPENROUTER_SITE_URL: z.string().url().default("https://ndangira.vercel.app"),
+  DEEPSEEK_API_KEY: z.string().optional(),
+  OPENROUTER_MODEL: z.string().default("deepseek/deepseek-chat"),
+  OPENROUTER_SITE_URL: z.string().default("https://ndangira-frontend.vercel.app"),
   OPENROUTER_APP_NAME: z.string().default("Ndangira")
 });
 
