@@ -1,9 +1,9 @@
-import { NotificationType, Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 
 interface CreateNotificationParams {
   userId: string;
-  type: NotificationType;
+  type: "SELLER_APPROVED" | "SELLER_REJECTED" | "LISTING_CREATED" | "LISTING_LOW_STOCK" | "NEW_SELLER_APPLICATION" | "SYSTEM_ANNOUNCEMENT";
   title: string;
   message: string;
   metadata?: Prisma.InputJsonValue;
@@ -22,7 +22,7 @@ export async function createNotification(params: CreateNotificationParams) {
 }
 
 export async function createNotificationForAllAdmins(
-  type: NotificationType,
+  type: "SELLER_APPROVED" | "SELLER_REJECTED" | "LISTING_CREATED" | "LISTING_LOW_STOCK" | "NEW_SELLER_APPLICATION" | "SYSTEM_ANNOUNCEMENT",
   title: string,
   message: string,
   metadata?: Prisma.InputJsonValue
@@ -45,7 +45,7 @@ export async function createNotificationForAllAdmins(
   });
 }
 
-export async function notifySellerApproval(userId: string, approved: boolean) {
+export async function notifySellerApproved(userId: string) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { name: true }
@@ -55,12 +55,27 @@ export async function notifySellerApproval(userId: string, approved: boolean) {
 
   return createNotification({
     userId,
-    type: approved ? "SELLER_APPROVED" : "SELLER_REJECTED",
-    title: approved ? "Seller Account Approved! 🎉" : "Seller Application Update",
-    message: approved
-      ? "Congratulations! Your seller account has been approved. You can now create listings and manage your business."
-      : "Your seller application has been reviewed. Please contact support for more information.",
-    metadata: { approved } as Prisma.InputJsonValue
+    type: "SELLER_APPROVED",
+    title: "Seller Account Approved! 🎉",
+    message: "Congratulations! Your seller account has been approved. You can now create listings and manage your business.",
+    metadata: { approved: true } as Prisma.InputJsonValue
+  });
+}
+
+export async function notifySellerRejected(userId: string) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { name: true }
+  });
+
+  if (!user) return null;
+
+  return createNotification({
+    userId,
+    type: "SELLER_REJECTED",
+    title: "Seller Application Update",
+    message: "Your seller application has been reviewed. Please contact support for more information.",
+    metadata: { approved: false } as Prisma.InputJsonValue
   });
 }
 
@@ -80,7 +95,7 @@ export async function notifyNewSellerApplication(sellerUserId: string) {
   );
 }
 
-export async function notifyListingCreated(listingId: string, merchantId: string) {
+export async function notifyListingCreated(listingId: string) {
   const listing = await prisma.listing.findUnique({
     where: { id: listingId },
     include: { Merchant: { include: { User: true } } }

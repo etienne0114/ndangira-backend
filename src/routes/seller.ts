@@ -77,7 +77,7 @@ sellerRouter.post("/listings", requireApproved, async (req, res, next) => {
     });
     
     // Send notification to seller
-    await notifyListingCreated(listing.id, merchant.id);
+    await notifyListingCreated(listing.id);
     
     // Send low stock notification if applicable
     if (listing.inventoryStatus === "LOW_STOCK") {

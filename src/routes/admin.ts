@@ -2,10 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { requireAdminAuth } from "../middleware/auth.js";
-
-const updateSellerStatusSchema = z.object({
-  action: z.enum(["verify", "suspend", "reactivate"])
-});
+import { notifySellerApproved, notifySellerRejected } from "../utils/notifications.js";
 
 export const adminRouter = Router();
 
@@ -54,13 +51,19 @@ adminRouter.get("/overview", async (_request, response, next) => {
   }
 });
 
+// Get all sellers (User-based seller management)
 adminRouter.get("/sellers", async (_request, response, next) => {
   try {
-    const sellers = await prisma.merchant.findMany({
+    const sellers = await prisma.user.findMany({
+      where: { role: "SELLER" },
       include: {
-        _count: {
+        Merchant: {
           select: {
-            Listing: true
+            id: true,
+            businessName: true,
+            neighborhood: true,
+            district: true,
+            verified: true
           }
         }
       },
@@ -68,10 +71,13 @@ adminRouter.get("/sellers", async (_request, response, next) => {
     });
 
     response.json({
-      sellers: sellers.map((seller) => ({
-        ...seller,
-        status: seller.aiEnabled ? (seller.verified ? "ACTIVE" : "PENDING") : "SUSPENDED",
-        listingsCount: seller._count.Listing
+      items: sellers.map((seller) => ({
+        id: seller.id,
+        email: seller.email,
+        name: seller.name,
+        sellerStatus: seller.sellerStatus,
+        createdAt: seller.createdAt,
+        merchant: seller.Merchant
       }))
     });
   } catch (error) {
@@ -79,22 +85,91 @@ adminRouter.get("/sellers", async (_request, response, next) => {
   }
 });
 
-adminRouter.patch("/sellers/:id/status", async (request, response, next) => {
+// Get all platform users
+adminRouter.get("/users", async (_request, response, next) => {
   try {
-    const payload = updateSellerStatusSchema.parse(request.body);
-    const seller = await prisma.merchant.update({
-      where: { id: request.params.id },
-      data:
-        payload.action === "verify"
-          ? { verified: true, aiEnabled: true }
-          : payload.action === "suspend"
-            ? { aiEnabled: false }
-            : { aiEnabled: true }
+    const users = await prisma.user.findMany({
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        sellerStatus: true,
+        createdAt: true
+      },
+      orderBy: { createdAt: "desc" }
     });
 
     response.json({
-      seller,
-      status: seller.aiEnabled ? (seller.verified ? "ACTIVE" : "PENDING") : "SUSPENDED"
+      items: users
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Approve seller
+adminRouter.patch("/sellers/:id/approve", async (request, response, next) => {
+  try {
+    const seller = await prisma.user.update({
+      where: { id: request.params.id },
+      data: { sellerStatus: "APPROVED" },
+      include: {
+        Merchant: {
+          select: {
+            id: true,
+            businessName: true,
+            neighborhood: true,
+            district: true,
+            verified: true
+          }
+        }
+      }
+    });
+
+    // Send notification to seller
+    await notifySellerApproved(seller.id);
+
+    response.json({
+      id: seller.id,
+      email: seller.email,
+      name: seller.name,
+      sellerStatus: seller.sellerStatus,
+      merchant: seller.Merchant
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Reject seller
+adminRouter.patch("/sellers/:id/reject", async (request, response, next) => {
+  try {
+    const seller = await prisma.user.update({
+      where: { id: request.params.id },
+      data: { sellerStatus: "REJECTED" },
+      include: {
+        Merchant: {
+          select: {
+            id: true,
+            businessName: true,
+            neighborhood: true,
+            district: true,
+            verified: true
+          }
+        }
+      }
+    });
+
+    // Send notification to seller
+    await notifySellerRejected(seller.id);
+
+    response.json({
+      id: seller.id,
+      email: seller.email,
+      name: seller.name,
+      sellerStatus: seller.sellerStatus,
+      merchant: seller.Merchant
     });
   } catch (error) {
     next(error);
