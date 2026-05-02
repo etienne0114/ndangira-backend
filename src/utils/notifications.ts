@@ -83,16 +83,16 @@ export async function notifyNewSellerApplication(sellerUserId: string) {
 export async function notifyListingCreated(listingId: string, merchantId: string) {
   const listing = await prisma.listing.findUnique({
     where: { id: listingId },
-    include: { merchant: { include: { user: true } } }
+    include: { Merchant: { include: { User: true } } }
   });
 
-  if (!listing || !listing.merchant.user) return null;
+  if (!listing || !listing.Merchant.User) return null;
 
   return createNotification({
-    userId: listing.merchant.user.id,
+    userId: listing.Merchant.User.id,
     type: "LISTING_CREATED",
     title: "Listing Published Successfully ✓",
-    message: `Your listing "${listing.title}" is now live and visible to customers in ${listing.merchant.neighborhood}.`,
+    message: `Your listing "${listing.title}" is now live and visible to customers in ${listing.Merchant.neighborhood}.`,
     metadata: { listingId, listingTitle: listing.title } as Prisma.InputJsonValue
   });
 }
@@ -100,13 +100,13 @@ export async function notifyListingCreated(listingId: string, merchantId: string
 export async function notifyLowStock(listingId: string) {
   const listing = await prisma.listing.findUnique({
     where: { id: listingId },
-    include: { merchant: { include: { user: true } } }
+    include: { Merchant: { include: { User: true } } }
   });
 
-  if (!listing || !listing.merchant.user) return null;
+  if (!listing || !listing.Merchant.User) return null;
 
   return createNotification({
-    userId: listing.merchant.user.id,
+    userId: listing.Merchant.User.id,
     type: "LISTING_LOW_STOCK",
     title: "Low Stock Alert ⚠️",
     message: `Your listing "${listing.title}" is marked as LOW_STOCK. Consider restocking or updating the inventory status.`,

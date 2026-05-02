@@ -1,3 +1,4 @@
+import { ListingCategory } from "@prisma/client";
 import { Router } from "express";
 import { z } from "zod";
 import { requireAuth, requireRole } from "../middleware/auth.js";
@@ -35,7 +36,7 @@ sellerRouter.get("/listings", async (req, res, next) => {
     const listings = await prisma.listing.findMany({
       where: { merchantId: merchant.id },
       orderBy: { createdAt: "desc" },
-      include: { category: true, merchant: true }
+      include: { Category: true, Merchant: true }
     });
     res.json({ items: listings });
   } catch (err) {
@@ -69,10 +70,10 @@ sellerRouter.post("/listings", requireApproved, async (req, res, next) => {
     const listing = await prisma.listing.create({
       data: {
         ...listingData,
-        category: { connect: { id: categoryId } },
-        merchant: { connect: { id: merchant.id } }
+        Category: { connect: { id: categoryId } },
+        Merchant: { connect: { id: merchant.id } }
       },
-      include: { category: true, merchant: true }
+      include: { Category: true, Merchant: true }
     });
     
     // Send notification to seller
@@ -109,8 +110,8 @@ sellerRouter.patch("/listings/:id", requireApproved, async (req, res, next) => {
     const { categoryId, ...listingData } = body;
     const updated = await prisma.listing.update({
       where: { id: listingId },
-      data: categoryId ? { ...listingData, category: { connect: { id: categoryId } } } : listingData,
-      include: { category: true, merchant: true }
+      data: categoryId ? { ...listingData, Category: { connect: { id: categoryId } } } : listingData,
+      include: { Category: true, Merchant: true }
     });
     
     // Send low stock notification if status changed to LOW_STOCK
@@ -149,6 +150,7 @@ sellerRouter.delete("/listings/:id", requireApproved, async (req, res, next) => 
 
 const merchantSchema = z.object({
   businessName: z.string().min(2),
+  businessType: z.nativeEnum(ListingCategory),
   phone: z.string().min(6),
   whatsapp: z.string().optional(),
   neighborhood: z.string().min(2),
@@ -162,7 +164,13 @@ sellerRouter.put("/merchant", requireApproved, async (req, res, next) => {
   try {
     const body = merchantSchema.parse(req.body);
     const user = await prisma.user.findUniqueOrThrow({ where: { id: req.user!.id } });
-    const data = { ...body, ownerName: user.name, userId: req.user!.id };
+    const data = { 
+      ...body, 
+      ownerName: user.name, 
+      userId: req.user!.id,
+      email: user.email,
+      passwordHash: user.passwordHash
+    };
     const existing = await prisma.merchant.findUnique({ where: { userId: req.user!.id } });
     const merchant = existing
       ? await prisma.merchant.update({ where: { userId: req.user!.id }, data })

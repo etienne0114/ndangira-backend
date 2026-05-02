@@ -48,8 +48,8 @@ categoriesRouter.get("/", async (_request, response, next) => {
       include: {
         _count: {
           select: {
-            listings: {
-              where: { merchant: { user: { role: "SELLER", sellerStatus: "APPROVED" } } }
+            Listing: {
+              where: { Merchant: { User: { role: "SELLER", sellerStatus: "APPROVED" } } }
             }
           }
         }
@@ -62,7 +62,7 @@ categoriesRouter.get("/", async (_request, response, next) => {
         name:         c.name,
         label:        c.label,
         isSystem:     c.isSystem,
-        listingCount: c._count.listings,
+        listingCount: c._count.Listing,
         createdAt:    c.createdAt
       }))
     });
