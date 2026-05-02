@@ -1,5 +1,4 @@
 import { Router } from "express";
-import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { requireAdminAuth } from "../middleware/auth.js";
 import { notifySellerApproved, notifySellerRejected } from "../utils/notifications.js";
