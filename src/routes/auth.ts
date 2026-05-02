@@ -3,8 +3,8 @@ import { Router } from "express";
 import jwt from "jsonwebtoken";
 import { z } from "zod";
 import { env } from "../config/env.js";
-import { requireAuth } from "../middleware/auth.js";
 import { prisma } from "../lib/prisma.js";
+import { requireAuth } from "../middleware/auth.js";
 
 export const authRouter = Router();
 
@@ -32,7 +32,7 @@ authRouter.post("/register", async (req, res, next) => {
   try {
     const body = registerSchema.parse(req.body);
 
-    const existing = await prisma.user.findUnique({ where: { email: body.email } });
+    const existing = await prisma.user.findUnique({ where: { email: body.email.toLowerCase() } });
     if (existing) {
       res.status(409).json({ message: "An account with this email already exists." });
       return;
@@ -41,7 +41,7 @@ authRouter.post("/register", async (req, res, next) => {
     const passwordHash = await bcrypt.hash(body.password, 10);
     const user = await prisma.user.create({
       data: {
-        email: body.email,
+        email: body.email.toLowerCase(),
         passwordHash,
         name: body.name,
         role: body.role,
@@ -62,7 +62,7 @@ authRouter.post("/login", async (req, res, next) => {
   try {
     const body = loginSchema.parse(req.body);
 
-    const user = await prisma.user.findUnique({ where: { email: body.email } });
+    const user = await prisma.user.findUnique({ where: { email: body.email.toLowerCase() } });
     if (!user) {
       res.status(401).json({ message: "Invalid email or password." });
       return;

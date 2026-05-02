@@ -26,15 +26,15 @@ enum SellerStatus {
 }
 
 model User {
-  id           String       @id @default(cuid())
-  email        String       @unique
+  id           String        @id @default(cuid())
+  email        String        @unique
   passwordHash String
   name         String
-  role         UserRole     @default(CUSTOMER)
+  role         UserRole      @default(CUSTOMER)
   sellerStatus SellerStatus?
   merchant     Merchant?
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
 }
 
 model Category {
@@ -47,21 +47,27 @@ model Category {
 }
 
 model Merchant {
-  id           String    @id @default(cuid())
-  userId       String?   @unique
-  user         User?     @relation(fields: [userId], references: [id])
-  businessName String
-  ownerName    String
-  phone        String
-  whatsapp     String?
-  neighborhood String
-  district     String
-  latitude     Float
-  longitude    Float
-  verified     Boolean   @default(false)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  listings     Listing[]
+  id              String    @id @default(cuid())
+  userId          String?   @unique
+  user            User?     @relation(fields: [userId], references: [id])
+  businessName    String
+  ownerName       String
+  phone           String
+  whatsapp        String?
+  neighborhood    String
+  district        String
+  addressLine     String?
+  description     String?
+  latitude        Float
+  longitude       Float
+  serviceRadiusKm Int       @default(5)
+  verified        Boolean   @default(false)
+  aiEnabled       Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  listings        Listing[]
+
+  @@index([neighborhood])
 }
 
 model Listing {

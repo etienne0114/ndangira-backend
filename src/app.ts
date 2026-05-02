@@ -46,30 +46,26 @@ app.use("/api/stats", statsRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/seller", sellerRouter);
 
-// Enhanced error handling middleware
 app.use((error: unknown, _request: express.Request, response: express.Response, _next: express.NextFunction) => {
   console.error("Error:", error);
-  
-  // Zod validation errors
+
   if (error && typeof error === "object" && "issues" in error) {
-    response.status(400).json({ 
+    response.status(400).json({
       message: "Validation error",
-      errors: error.issues 
+      errors: error.issues
     });
     return;
   }
-  
-  // Standard errors
+
   if (error instanceof Error) {
-    response.status(400).json({ 
+    response.status(400).json({
       message: error.message,
       type: error.name
     });
     return;
   }
-  
-  // Unknown errors
-  response.status(500).json({ 
-    message: "Unexpected server error. Please try again later." 
+
+  response.status(500).json({
+    message: "Unexpected server error. Please try again later."
   });
 });

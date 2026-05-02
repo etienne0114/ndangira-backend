@@ -15,10 +15,16 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
     res.status(401).json({ message: "Authentication required." });
     return;
   }
+
   const token = header.slice(7);
   try {
     const payload = jwt.verify(token, env.JWT_SECRET) as JwtPayload;
-    req.user = { id: payload.id, email: payload.email, name: payload.name, role: payload.role as import("@prisma/client").UserRole };
+    req.user = {
+      id: payload.id,
+      email: payload.email,
+      name: payload.name,
+      role: payload.role as import("@prisma/client").UserRole
+    };
     next();
   } catch {
     res.status(401).json({ message: "Invalid or expired token." });
