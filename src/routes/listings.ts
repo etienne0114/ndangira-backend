@@ -1,6 +1,7 @@
 import { InventoryStatus, ListingCategory, Prisma } from "@prisma/client";
 import { Router } from "express";
 import { z } from "zod";
+import { hashPassword } from "../lib/auth.js";
 import { prisma } from "../lib/prisma.js";
 import { calculateDistanceKm } from "../utils/distance.js";
 
@@ -18,12 +19,18 @@ const createListingSchema = z.object({
   merchant: z.object({
     businessName: z.string().min(2),
     ownerName: z.string().min(2),
+    email: z.string().email(),
+    password: z.string().min(6),
     phone: z.string().min(8),
     whatsapp: z.string().optional(),
+    businessType: z.nativeEnum(ListingCategory),
     neighborhood: z.string().min(2),
     district: z.string().min(2),
+    addressLine: z.string().optional(),
+    description: z.string().optional(),
     latitude: z.number(),
     longitude: z.number(),
+    serviceRadiusKm: z.number().int().positive().max(50).default(5),
     verified: z.boolean().optional().default(false)
   })
 });
@@ -198,6 +205,7 @@ listingsRouter.get("/:id", async (request, response, next) => {
 listingsRouter.post("/", async (request, response, next) => {
   try {
     const payload = createListingSchema.parse(request.body);
+    const passwordHash = await hashPassword(payload.merchant.password);
 
     const created = await prisma.listing.create({
       data: {
@@ -212,7 +220,23 @@ listingsRouter.post("/", async (request, response, next) => {
         imageUrl: payload.imageUrl,
         tags: payload.tags.map((tag) => tag.toLowerCase()),
         merchant: {
-          create: payload.merchant
+          create: {
+            businessName: payload.merchant.businessName,
+            ownerName: payload.merchant.ownerName,
+            email: payload.merchant.email.toLowerCase(),
+            passwordHash,
+            phone: payload.merchant.phone,
+            whatsapp: payload.merchant.whatsapp,
+            businessType: payload.merchant.businessType,
+            neighborhood: payload.merchant.neighborhood,
+            district: payload.merchant.district,
+            addressLine: payload.merchant.addressLine,
+            description: payload.merchant.description,
+            latitude: payload.merchant.latitude,
+            longitude: payload.merchant.longitude,
+            serviceRadiusKm: payload.merchant.serviceRadiusKm,
+            verified: payload.merchant.verified
+          }
         }
       },
       include: { merchant: true }
