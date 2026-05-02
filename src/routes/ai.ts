@@ -18,8 +18,8 @@ aiRouter.post("/assistant", async (request, response, next) => {
     const payload = aiRequestSchema.parse(request.body);
 
     const allListings = await prisma.listing.findMany({
-      where: { merchant: { user: { role: "SELLER", sellerStatus: "APPROVED" } } },
-      include: { merchant: true, category: true },
+      where: { Merchant: { User: { role: "SELLER", sellerStatus: "APPROVED" } } },
+      include: { Merchant: true, Category: true },
       take: 24,
       orderBy: [{ isFeatured: "desc" }, { createdAt: "desc" }]
     });
@@ -32,8 +32,8 @@ aiRouter.post("/assistant", async (request, response, next) => {
           distance: calculateDistanceKm(
             payload.lat!,
             payload.lng!,
-            listing.merchant.latitude,
-            listing.merchant.longitude
+            listing.Merchant.latitude,
+            listing.Merchant.longitude
           )
         }))
         .sort((a, b) => a.distance - b.distance)
@@ -49,10 +49,10 @@ aiRouter.post("/assistant", async (request, response, next) => {
             : "distance unknown";
 
         const freshness = listing.freshnessNote ? ` | Fresh: ${listing.freshnessNote}` : "";
-        const stock     = listing.inventoryStatus !== "IN_STOCK" ? ` | ${listing.inventoryStatus}` : "";
-        const verified  = listing.merchant.verified ? " | ✓ Verified" : "";
+        const stock = listing.inventoryStatus !== "IN_STOCK" ? ` | ${listing.inventoryStatus}` : "";
+        const verified = listing.Merchant.verified ? " | ✓ Verified" : "";
 
-        return `• ${listing.title} - ${listing.priceRwf.toLocaleString()} RWF ${listing.unitLabel} | ${listing.category.name} | ${listing.merchant.businessName} in ${listing.merchant.neighborhood} | ${distance}${freshness}${stock}${verified}`;
+        return `• ${listing.title} - ${listing.priceRwf.toLocaleString()} RWF ${listing.unitLabel} | ${listing.Category.name} | ${listing.Merchant.businessName} in ${listing.Merchant.neighborhood} | ${distance}${freshness}${stock}${verified}`;
       })
       .join("\n");
 
@@ -93,26 +93,24 @@ ${neighborhoodHighlights}`;
       { role: "user",   content: payload.message }
     ]);
 
-    const suggestions     = generateSuggestions(payload.message, nearbyListings);
-    const relatedListings = rankRelevantListings(payload.message, nearbyListings)
-      .slice(0, 4)
-      .map((listing) => {
-        const listingWithDistance = listing as typeof listing & { distance?: number };
-        return {
-          id:             listing.id,
-          title:          listing.title,
-          priceRwf:       listing.priceRwf,
-          merchant:       listing.merchant.businessName,
-          neighborhood:   listing.merchant.neighborhood,
-          distance:       listingWithDistance.distance ?? null,
-          category:       listing.category.name,
-          categoryLabel:  listing.category.label,
-          unitLabel:      listing.unitLabel,
-          inventoryStatus: listing.inventoryStatus,
-          freshnessNote:  listing.freshnessNote ?? null,
-          verified:       listing.merchant.verified
-        };
-      });
+    const suggestions = generateSuggestions(payload.message, nearbyListings);
+    const relatedListings = rankRelevantListings(payload.message, nearbyListings).slice(0, 4).map((listing) => {
+      const listingWithDistance = listing as typeof listing & { distance?: number };
+      return {
+        id: listing.id,
+        title: listing.title,
+        priceRwf: listing.priceRwf,
+        merchant: listing.Merchant.businessName,
+        neighborhood: listing.Merchant.neighborhood,
+        distance: listingWithDistance.distance ?? null,
+        category: listing.Category.name,
+        categoryLabel: listing.Category.label,
+        unitLabel: listing.unitLabel,
+        inventoryStatus: listing.inventoryStatus,
+        freshnessNote: listing.freshnessNote ?? null,
+        verified: listing.Merchant.verified
+      };
+    });
 
     response.json({
       reply,
@@ -129,12 +127,12 @@ function normalizeCategory(name: string) {
   return name.toLowerCase().replace(/_/g, " ");
 }
 
-function buildCategoryInsights(listings: Array<{ category: { name: string } }>) {
+function buildCategoryInsights(listings: any[]) {
   const counts = new Map<string, number>();
 
   for (const listing of listings) {
-    const name = listing.category.name;
-    counts.set(name, (counts.get(name) ?? 0) + 1);
+    const categoryName = listing.Category.name;
+    counts.set(categoryName, (counts.get(categoryName) ?? 0) + 1);
   }
 
   if (counts.size === 0) return "No category insights available.";
@@ -157,18 +155,17 @@ function buildPriceComparison(message: string, listings: any[]) {
   );
 
   return [
-    `Cheapest relevant option: ${cheapest.title} at ${cheapest.priceRwf.toLocaleString()} RWF from ${cheapest.merchant.businessName} in ${cheapest.merchant.neighborhood}.`,
-    `Highest priced relevant option: ${priciest.title} at ${priciest.priceRwf.toLocaleString()} RWF from ${priciest.merchant.businessName}.`,
+    `Cheapest relevant option: ${cheapest.title} at ${cheapest.priceRwf.toLocaleString()} RWF from ${cheapest.Merchant.businessName} in ${cheapest.Merchant.neighborhood}.`,
+    `Highest priced relevant option: ${priciest.title} at ${priciest.priceRwf.toLocaleString()} RWF from ${priciest.Merchant.businessName}.`,
     `Average price across top matches: ${average.toLocaleString()} RWF.`
   ].join("\n");
 }
 
-function buildNeighborhoodHighlights(listings: Array<{ merchant: { neighborhood: string } }>) {
+function buildNeighborhoodHighlights(listings: any[]) {
   const grouped = new Map<string, number>();
 
   for (const listing of listings) {
-    const n = listing.merchant.neighborhood;
-    grouped.set(n, (grouped.get(n) ?? 0) + 1);
+    grouped.set(listing.Merchant.neighborhood, (grouped.get(listing.Merchant.neighborhood) ?? 0) + 1);
   }
 
   return Array.from(grouped.entries())
@@ -192,9 +189,9 @@ function scoreListing(listing: any, tokens: string[]) {
   const haystack = [
     listing.title,
     listing.description,
-    listing.category.name,
-    listing.merchant.businessName,
-    listing.merchant.neighborhood,
+    listing.Category.name,
+    listing.Merchant.businessName,
+    listing.Merchant.neighborhood,
     ...(listing.tags ?? [])
   ]
     .join(" ")
@@ -204,10 +201,18 @@ function scoreListing(listing: any, tokens: string[]) {
     if (haystack.includes(token)) score += 3;
   }
 
-  if (listing.merchant.verified)          score += 1;
-  if (listing.isFeatured)                 score += 1;
-  if (listing.inventoryStatus === "IN_STOCK") score += 1;
-  if (listing.distance !== undefined)     score += Math.max(0, 5 - listing.distance);
+  if (listing.Merchant.verified) {
+    score += 1;
+  }
+  if (listing.isFeatured) {
+    score += 1;
+  }
+  if (listing.inventoryStatus === "IN_STOCK") {
+    score += 1;
+  }
+  if (listing.distance !== undefined) {
+    score += Math.max(0, 5 - listing.distance);
+  }
 
   return score;
 }
@@ -233,7 +238,7 @@ function generateSuggestions(message: string, listings: any[]): string[] {
   }
 
   if (listings.length > 0) {
-    const categories = [...new Set(listings.map((l) => l.category.name))];
+    const categories = [...new Set(listings.map((l) => l.Category.name))];
     if (categories.length > 1) {
       suggestions.push(`Compare options across ${categories.join(" and ")}`);
     }

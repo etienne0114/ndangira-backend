@@ -21,24 +21,24 @@ const searchSchema = z.object({
   offset: z.coerce.number().int().nonnegative().default(0)
 });
 
-type ListingWithRelations = Prisma.ListingGetPayload<{
-  include: { merchant: true; category: true };
+type ListingWithMerchant = Prisma.ListingGetPayload<{
+  include: { Merchant: true; Category: true };
 }>;
 
-function serializeListings(listings: ListingWithRelations[], lat?: number, lng?: number) {
+function serializeListings(listings: ListingWithMerchant[], lat?: number, lng?: number) {
   return listings.map((listing) => {
     const distanceKm =
       lat !== undefined && lng !== undefined
-        ? calculateDistanceKm(lat, lng, listing.merchant.latitude, listing.merchant.longitude)
+        ? calculateDistanceKm(lat, lng, listing.Merchant.latitude, listing.Merchant.longitude)
         : null;
 
     return {
       id: listing.id,
       title: listing.title,
       description: listing.description,
-      category: listing.category.name,
-      categoryId: listing.category.id,
-      categoryLabel: listing.category.label,
+      category: listing.Category.name,
+      categoryId: listing.Category.id,
+      categoryLabel: listing.Category.label,
       priceRwf: listing.priceRwf,
       unitLabel: listing.unitLabel,
       inventoryStatus: listing.inventoryStatus,
@@ -48,16 +48,16 @@ function serializeListings(listings: ListingWithRelations[], lat?: number, lng?:
       tags: listing.tags,
       createdAt: listing.createdAt,
       merchant: {
-        id: listing.merchant.id,
-        businessName: listing.merchant.businessName,
-        ownerName: listing.merchant.ownerName,
-        phone: listing.merchant.phone,
-        whatsapp: listing.merchant.whatsapp,
-        neighborhood: listing.merchant.neighborhood,
-        district: listing.merchant.district,
-        latitude: listing.merchant.latitude,
-        longitude: listing.merchant.longitude,
-        verified: listing.merchant.verified
+        id: listing.Merchant.id,
+        businessName: listing.Merchant.businessName,
+        ownerName: listing.Merchant.ownerName,
+        phone: listing.Merchant.phone,
+        whatsapp: listing.Merchant.whatsapp,
+        neighborhood: listing.Merchant.neighborhood,
+        district: listing.Merchant.district,
+        latitude: listing.Merchant.latitude,
+        longitude: listing.Merchant.longitude,
+        verified: listing.Merchant.verified
       },
       distanceKm
     };
@@ -71,7 +71,6 @@ listingsRouter.get("/", async (request, response, next) => {
     const query = searchSchema.parse(request.query);
 
     const where: Prisma.ListingWhereInput = {
-      AND: [{ merchant: { user: { role: "SELLER", sellerStatus: "APPROVED" } } }],
       ...(query.q
         ? {
             OR: [
@@ -84,7 +83,7 @@ listingsRouter.get("/", async (request, response, next) => {
       ...(query.categoryId
         ? { categoryId: query.categoryId }
         : query.category
-          ? { category: { name: { equals: query.category.toUpperCase(), mode: "insensitive" } } }
+          ? { Category: { name: { equals: query.category.toUpperCase(), mode: "insensitive" } } }
           : {}),
       ...(query.inventoryStatus ? { inventoryStatus: query.inventoryStatus } : {}),
       ...(query.minPrice || query.maxPrice
@@ -97,13 +96,13 @@ listingsRouter.get("/", async (request, response, next) => {
         : {}),
       ...(query.neighborhood
         ? {
-            merchant: {
+            Merchant: {
               neighborhood: { contains: query.neighborhood, mode: "insensitive" },
               ...(query.verifiedOnly ? { verified: true } : {})
             }
           }
         : query.verifiedOnly
-          ? { merchant: { verified: true } }
+          ? { Merchant: { verified: true } }
           : {})
     };
 
@@ -111,7 +110,10 @@ listingsRouter.get("/", async (request, response, next) => {
 
     const listings = await prisma.listing.findMany({
       where,
-      include: { merchant: true, category: true },
+      include: {
+        Merchant: true,
+        Category: true
+      },
       orderBy: [{ isFeatured: "desc" }, { createdAt: "desc" }],
       take: query.limit,
       skip: query.offset
@@ -154,12 +156,9 @@ listingsRouter.get("/", async (request, response, next) => {
 
 listingsRouter.get("/:id", async (request, response, next) => {
   try {
-    const listing = await prisma.listing.findFirst({
-      where: {
-        id: request.params.id,
-        merchant: { user: { role: "SELLER", sellerStatus: "APPROVED" } }
-      },
-      include: { merchant: true, category: true }
+    const listing = await prisma.listing.findUnique({
+      where: { id: request.params.id },
+      include: { Merchant: true, Category: true }
     });
 
     if (!listing) {
@@ -173,6 +172,5 @@ listingsRouter.get("/:id", async (request, response, next) => {
   }
 });
 
-listingsRouter.post("/", (_request, response) => {
-  response.status(405).json({ message: "Use /api/seller/listings to create seller-owned listings." });
-});
+// REMOVED: This endpoint was a security vulnerability that allowed unauthenticated listing creation
+// Use POST /api/merchant/listings instead (requires authentication)

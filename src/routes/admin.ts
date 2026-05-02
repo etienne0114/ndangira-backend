@@ -1,86 +1,127 @@
 import { Router } from "express";
-import { requireAuth, requireRole } from "../middleware/auth.js";
+import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
-import { notifySellerApproval } from "../utils/notifications.js";
+import { requireAdminAuth } from "../middleware/auth.js";
+
+const updateSellerStatusSchema = z.object({
+  action: z.enum(["verify", "suspend", "reactivate"])
+});
 
 export const adminRouter = Router();
 
-adminRouter.use(requireAuth, requireRole("ADMIN"));
+adminRouter.use(requireAdminAuth);
 
-// List all sellers with their status
-adminRouter.get("/sellers", async (_req, res, next) => {
+adminRouter.get("/overview", async (_request, response, next) => {
   try {
-    const sellers = await prisma.user.findMany({
-      where: { role: "SELLER" },
-      orderBy: { createdAt: "desc" },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        sellerStatus: true,
-        createdAt: true,
-        merchant: {
-          select: { id: true, businessName: true, neighborhood: true, district: true, verified: true }
+    const [
+      totalListings,
+      totalMerchants,
+      activeSellers,
+      pendingSellers,
+      suspendedSellers,
+      recentListings,
+      newSellers
+    ] = await Promise.all([
+      prisma.listing.count(),
+      prisma.merchant.count(),
+      prisma.merchant.count({ where: { verified: true, aiEnabled: true } }),
+      prisma.merchant.count({ where: { verified: false, aiEnabled: true } }),
+      prisma.merchant.count({ where: { aiEnabled: false } }),
+      prisma.listing.findMany({
+        include: { Merchant: true },
+        orderBy: { createdAt: "desc" },
+        take: 6
+      }),
+      prisma.merchant.findMany({
+        orderBy: { createdAt: "desc" },
+        take: 6
+      })
+    ]);
+
+    response.json({
+      stats: {
+        totalListings,
+        totalMerchants,
+        activeSellers,
+        pendingSellers,
+        suspendedSellers
+      },
+      recentListings,
+      newSellers
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+adminRouter.get("/sellers", async (_request, response, next) => {
+  try {
+    const sellers = await prisma.merchant.findMany({
+      include: {
+        _count: {
+          select: {
+            Listing: true
+          }
         }
-      }
+      },
+      orderBy: { createdAt: "desc" }
     });
-    res.json({ items: sellers });
-  } catch (err) {
-    next(err);
+
+    response.json({
+      sellers: sellers.map((seller) => ({
+        ...seller,
+        status: seller.aiEnabled ? (seller.verified ? "ACTIVE" : "PENDING") : "SUSPENDED",
+        listingsCount: seller._count.Listing
+      }))
+    });
+  } catch (error) {
+    next(error);
   }
 });
 
-// Approve a seller
-adminRouter.patch("/sellers/:id/approve", async (req, res, next) => {
+adminRouter.patch("/sellers/:id/status", async (request, response, next) => {
   try {
-    const user = await prisma.user.updateMany({
-      where: { id: req.params.id, role: "SELLER" },
-      data: { sellerStatus: "APPROVED" }
+    const payload = updateSellerStatusSchema.parse(request.body);
+    const seller = await prisma.merchant.update({
+      where: { id: request.params.id },
+      data:
+        payload.action === "verify"
+          ? { verified: true, aiEnabled: true }
+          : payload.action === "suspend"
+            ? { aiEnabled: false }
+            : { aiEnabled: true }
     });
-    if (user.count === 0) {
-      res.status(404).json({ message: "Seller not found." });
-      return;
-    }
-    
-    // Send notification to seller
-    await notifySellerApproval(req.params.id, true);
-    
-    res.json({ id: req.params.id, sellerStatus: "APPROVED" });
-  } catch (err) {
-    next(err);
+
+    response.json({
+      seller,
+      status: seller.aiEnabled ? (seller.verified ? "ACTIVE" : "PENDING") : "SUSPENDED"
+    });
+  } catch (error) {
+    next(error);
   }
 });
 
-// Reject a seller
-adminRouter.patch("/sellers/:id/reject", async (req, res, next) => {
+adminRouter.get("/listings", async (_request, response, next) => {
   try {
-    const user = await prisma.user.updateMany({
-      where: { id: req.params.id, role: "SELLER" },
-      data: { sellerStatus: "REJECTED" }
+    const listings = await prisma.listing.findMany({
+      include: { Merchant: true },
+      orderBy: { createdAt: "desc" }
     });
-    if (user.count === 0) {
-      res.status(404).json({ message: "Seller not found." });
-      return;
-    }
-    
-    // Send notification to seller
-    await notifySellerApproval(req.params.id, false);
-    
-    res.json({ id: req.params.id, sellerStatus: "REJECTED" });
-  } catch (err) {
-    next(err);
+
+    response.json({ listings });
+  } catch (error) {
+    next(error);
   }
 });
 
-// List all users
-adminRouter.get("/users", async (_req, res, next) => {
+adminRouter.delete("/listings/:id", async (request, response, next) => {
   try {
-    const users = await prisma.user.findMany({
-      orderBy: { createdAt: "desc" },
-      select: { id: true, email: true, name: true, role: true, sellerStatus: true, createdAt: true }
+    await prisma.listing.delete({
+      where: { id: request.params.id }
     });
-    res.json({ items: users });
-  } catch (err) {
-    next(err);
+
+    response.status(204).send();
+  } catch (error) {
+    next(error);
   }
 });
